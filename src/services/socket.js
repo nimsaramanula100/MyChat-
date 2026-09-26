@@ -8,7 +8,8 @@ export function initSocket(token) {
     socket.disconnect();
   }
 
-  socket = io('http://localhost:5000', {
+  const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  socket = io(socketUrl, {
     auth: { token },
     transports: ['websocket', 'polling']
   });
