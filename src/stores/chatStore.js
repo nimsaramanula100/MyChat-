@@ -14,7 +14,8 @@ export const useChatStore = defineStore('chat', {
     isLoadingMessages: false,
     isHiddenUnlocked: false,
     hiddenPinPrompt: false,
-    currentWallpaper: 'default' // default, dark, gradient, custom URL
+    currentWallpaper: 'default', // default, dark, gradient, custom URL
+    isSocketInitialized: false
   }),
 
   getters: {
@@ -32,27 +33,44 @@ export const useChatStore = defineStore('chat', {
 
   actions: {
     initSocketListeners() {
+      if (this.isSocketInitialized) return;
+      this.isSocketInitialized = true;
+
       // Listen for incoming new messages
       onSocketEvent('new_message', (msg) => {
-        const roomId = msg.room_id;
+        const roomId = msg.room_id || msg.roomId;
+        if (!roomId) return;
+
         if (!this.messages[roomId]) {
           this.messages[roomId] = [];
         }
 
-        // Avoid duplicate message appending
-        if (!this.messages[roomId].some(m => m.id === msg.id)) {
-          this.messages[roomId].push(msg);
+        const roomMsgs = this.messages[roomId];
+
+        // Deduplication check by id or tempId
+        const existingIndex = roomMsgs.findIndex(m => 
+          m.id === msg.id || 
+          (msg.tempId && m.tempId === msg.tempId) ||
+          (m.id && m.id === msg.id)
+        );
+
+        if (existingIndex !== -1) {
+          // Update existing message bubble in-place (e.g. optimistic -> confirmed)
+          roomMsgs[existingIndex] = { ...roomMsgs[existingIndex], ...msg };
+        } else {
+          // Append single new message bubble
+          roomMsgs.push(msg);
         }
 
-        // Update chat's last message & unread count
+        // Update chat's last message preview & unread count
         const chat = this.chats.find(c => c.id === roomId);
         if (chat) {
           chat.lastMessage = {
             id: msg.id,
             content: msg.is_view_once ? '[View Once Media]' : msg.content,
             type: msg.type,
-            senderName: msg.sender_name,
-            createdAt: msg.created_at
+            senderName: msg.sender_name || msg.senderName,
+            createdAt: msg.created_at || msg.createdAt
           };
 
           if (this.activeChatId !== roomId) {
@@ -120,22 +138,61 @@ export const useChatStore = defineStore('chat', {
     async sendMessage({ content, type = 'text', mediaUrl, mediaMeta, isViewOnce, replyToId }) {
       if (!this.activeChatId) return;
 
-      const payload = {
-        roomId: this.activeChatId,
-        content,
+      const roomId = this.activeChatId;
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+      const optimisticMsg = {
+        id: tempId,
+        tempId: tempId,
+        room_id: roomId,
+        sender_id: localStorage.getItem('mychat_user_id') || '',
+        sender_name: 'Me',
         type,
-        mediaUrl,
-        mediaMeta,
-        isViewOnce,
-        replyToId
+        content: content || '',
+        media_url: mediaUrl || '',
+        mediaMeta: mediaMeta || {},
+        is_view_once: isViewOnce ? 1 : 0,
+        is_consumed: 0,
+        reply_to_id: replyToId || null,
+        created_at: new Date().toISOString(),
+        reactions: [],
+        reads: []
       };
 
-      // Realtime emit via Socket
-      emitSocketEvent('send_message', payload);
+      if (!this.messages[roomId]) {
+        this.messages[roomId] = [];
+      }
 
-      // Fallback REST call for redundancy
-      const res = await api.sendMessage(this.activeChatId, payload);
-      return res;
+      // Add single optimistic UI bubble immediately
+      this.messages[roomId].push(optimisticMsg);
+
+      try {
+        const payload = {
+          roomId,
+          content,
+          type,
+          mediaUrl,
+          mediaMeta,
+          isViewOnce,
+          replyToId,
+          tempId
+        };
+
+        // Single REST API request (saves 1 DB row and broadcasts 1 Socket.IO new_message)
+        const res = await api.sendMessage(roomId, payload);
+        if (res.message) {
+          const idx = this.messages[roomId].findIndex(m => m.tempId === tempId || m.id === tempId);
+          if (idx !== -1) {
+            this.messages[roomId][idx] = { ...this.messages[roomId][idx], ...res.message };
+          }
+        }
+        return res;
+      } catch (err) {
+        console.error('Failed to send message:', err);
+        // Remove optimistic bubble on send failure
+        this.messages[roomId] = this.messages[roomId].filter(m => m.tempId !== tempId && m.id !== tempId);
+        throw err;
+      }
     },
 
     async consumeViewOnce(messageId) {

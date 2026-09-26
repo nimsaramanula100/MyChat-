@@ -38,10 +38,12 @@ export function onSocketEvent(event, callback) {
   if (!eventListeners.has(event)) {
     eventListeners.set(event, []);
   }
-  eventListeners.get(event).push(callback);
-
-  if (socket) {
-    socket.on(event, callback);
+  const listeners = eventListeners.get(event);
+  if (!listeners.includes(callback)) {
+    listeners.push(callback);
+    if (socket) {
+      socket.on(event, callback);
+    }
   }
 }
 

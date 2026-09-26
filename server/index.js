@@ -62,6 +62,7 @@ const io = new SocketIOServer(server, {
   }
 });
 
+app.set('io', io);
 setupSocket(io);
 
 // Initialize DB and start server

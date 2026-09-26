@@ -98,13 +98,30 @@ export const useAuthStore = defineStore('auth', {
         if (this.token) {
           await api.logout().catch(() => {});
         }
+      } catch (err) {
+        console.warn('Logout API warning:', err);
       } finally {
         this.token = null;
         this.user = null;
+        this.privacy = null;
+        this.security = null;
         this.isAuthenticated = false;
         this.otpSent = false;
+        this.phoneNumber = '';
+        this.devOtpCode = '';
+        this.devices = [];
+
         localStorage.removeItem('mychat_token');
-        disconnectSocket();
+        localStorage.removeItem('novachat_token');
+
+        try {
+          disconnectSocket();
+        } catch (e) {}
+
+        // Prevent browser back button navigation from revealing authenticated views
+        if (typeof window !== 'undefined' && window.history?.pushState) {
+          window.history.pushState(null, '', window.location.href);
+        }
       }
     },
 

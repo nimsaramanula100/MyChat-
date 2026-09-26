@@ -60,24 +60,6 @@
             <span v-else>Continue & Send OTP</span>
           </button>
 
-          <!-- Quick Dev Test Login Buttons -->
-          <div class="dev-quick-login">
-            <div class="dev-divider"><span>OR QUICK TEST ACCOUNTS</span></div>
-            <div class="seed-users-grid">
-              <button 
-                v-for="user in devSeedUsers" 
-                :key="user.phone" 
-                @click="quickLoginSeedUser(user.phone)"
-                class="seed-user-btn"
-              >
-                <img :src="user.avatar" class="seed-avatar" />
-                <div class="seed-info">
-                  <span class="seed-name">{{ user.name }}</span>
-                  <span class="seed-role">{{ user.phone }}</span>
-                </div>
-              </button>
-            </div>
-          </div>
         </div>
 
         <!-- Step 2: OTP Verification -->
@@ -120,9 +102,12 @@
             <span class="brand-logo">⚡</span>
             <span class="brand-name">MyChat</span>
           </div>
-          <div class="user-status-avatar" @click="showSettingsModal = true" title="Settings & Profile">
-            <img :src="authStore.user?.avatar" class="avatar-sm" />
-            <span class="online-indicator"></span>
+          <div class="nav-brand-actions">
+            <button @click="openSettingsPage('main')" class="btn-icon" title="Application Settings">⚙️</button>
+            <div class="user-status-avatar" @click="openProfilePage()" title="Settings & Profile">
+              <img :src="authStore.user?.avatar" class="avatar-sm" />
+              <span class="online-indicator"></span>
+            </div>
           </div>
         </div>
 
@@ -164,7 +149,7 @@
 
           <button 
             :class="['tab-btn', { active: activeTab === 'settings' }]" 
-            @click="showSettingsModal = true"
+            @click="openSettingsPage('main')"
             title="Settings"
           >
             ⚙️ <span class="tab-label">Settings</span>
@@ -334,13 +319,17 @@
         <div v-else class="active-chat-container">
           <!-- Chat Header -->
           <header class="chat-header">
-            <div class="header-left">
-              <button v-if="isMobile" @click="chatStore.activeChatId = null" class="btn-back">←</button>
+            <div class="header-left clickable-header-left" @click="chatStore.activeChat?.type === 'group' ? showGroupInfoModal = true : openProfilePage()">
+              <button v-if="isMobile" @click.stop="chatStore.activeChatId = null" class="btn-back">← Back</button>
               <img :src="chatStore.activeChat?.avatar || 'https://api.dicebear.com/7.x/identicon/svg?seed=Chat'" class="avatar-md" />
               <div class="header-title-group">
-                <span class="header-name">{{ chatStore.activeChat?.name }}</span>
+                <span class="header-name">
+                  {{ chatStore.activeChat?.name }}
+                  <span v-if="chatStore.activeChat?.type === 'group'" class="group-tag-badge">Group ℹ️</span>
+                </span>
                 <span class="header-sub">
-                  <span v-if="chatStore.typingUsers[chatStore.activeChatId]?.size > 0" class="typing-active">typing...</span>
+                  <span v-if="chatStore.activeChat?.type === 'group'">{{ chatStore.activeChat?.memberCount || 'Multiple' }} members • Tap for info</span>
+                  <span v-else-if="chatStore.typingUsers[chatStore.activeChatId]?.size > 0" class="typing-active">typing...</span>
                   <span v-else-if="chatStore.onlineUsers.has(chatStore.activeChat?.partner?.id)" class="status-online">Online</span>
                   <span v-else class="status-offline">Offline</span>
                 </span>
@@ -348,9 +337,11 @@
             </div>
 
             <div class="header-actions">
+              <button v-if="chatStore.activeChat?.type === 'group'" @click="showGroupInfoModal = true" class="btn-icon" title="Group Info">ℹ️</button>
               <button @click="togglePin" class="btn-icon" :title="chatStore.activeChat?.isPinned ? 'Unpin' : 'Pin Chat'">📌</button>
               <button @click="promptHideCurrentChat" class="btn-icon" title="Hide Chat with PIN">🔒</button>
               <button @click="showWallpaperPicker = !showWallpaperPicker" class="btn-icon" title="Change Background">🎨</button>
+              <button @click="openSettingsPage('main')" class="btn-icon" title="Application Settings">⚙️</button>
             </div>
           </header>
 
@@ -384,14 +375,83 @@
                     <span v-if="msg.is_consumed" class="vo-status">Viewed Media (Expired)</span>
                     <span v-else class="vo-status">Tap to View Once Photo</span>
                   </div>
-                  <img v-else :src="msg.media_url" class="msg-image-preview" />
+                  <div v-else class="image-bubble-wrap" @click="openLightbox(msg.media_url, msg.content, 'image')">
+                    <img :src="fullFileUrl(msg.media_url)" class="msg-image-preview" alt="Chat photo" />
+                    <div v-if="msg.content" class="msg-caption">{{ msg.content }}</div>
+                  </div>
                 </div>
 
-                <!-- Voice Message -->
-                <div v-else-if="msg.type === 'voice'" class="msg-voice-player">
-                  <button @click="playVoiceAudio(msg.media_url)" class="voice-play-btn">▶</button>
-                  <div class="voice-waveform"></div>
-                  <span class="voice-duration">Voice Note</span>
+                <!-- Video Attachment -->
+                <div v-else-if="msg.type === 'video'" class="msg-media-container">
+                  <div class="video-bubble-wrap">
+                    <video :src="fullFileUrl(msg.media_url)" controls class="msg-video-player"></video>
+                    <div v-if="msg.content" class="msg-caption">{{ msg.content }}</div>
+                  </div>
+                </div>
+
+                <!-- Document Attachment (WhatsApp style card) -->
+                <div v-else-if="msg.type === 'document'" class="msg-doc-card">
+                  <div class="doc-card-top">
+                    <span class="doc-badge-sm" :class="getDocBadgeClass(msg.mediaMeta?.name || msg.media_meta?.originalName)">
+                      {{ getDocExtension(msg.mediaMeta?.name || msg.media_meta?.originalName) }}
+                    </span>
+                    <div class="doc-card-details">
+                      <span class="doc-card-name">{{ msg.mediaMeta?.name || msg.media_meta?.originalName || 'Document' }}</span>
+                      <span class="doc-card-size">{{ formatFileSize(msg.mediaMeta?.size || msg.media_meta?.size) }}</span>
+                    </div>
+                    <a :href="fullFileUrl(msg.media_url)" target="_blank" download class="btn-doc-dl" title="Download Document">💾</a>
+                  </div>
+                  <div v-if="msg.content" class="msg-caption mt-1">{{ msg.content }}</div>
+                </div>
+
+                <!-- Audio / Voice Message -->
+                <div v-else-if="msg.type === 'audio' || msg.type === 'voice'" class="msg-audio-card">
+                  <div class="audio-card-header">
+                    <span class="audio-icon">🎵</span>
+                    <div class="audio-card-meta">
+                      <span class="audio-card-title">{{ msg.mediaMeta?.name || 'Audio Message' }}</span>
+                      <span class="audio-card-size">{{ formatFileSize(msg.mediaMeta?.size) }}</span>
+                    </div>
+                  </div>
+                  <audio :src="fullFileUrl(msg.media_url)" controls class="msg-audio-element"></audio>
+                  <div v-if="msg.content" class="msg-caption mt-1">{{ msg.content }}</div>
+                </div>
+
+                <!-- Contact Message -->
+                <div v-else-if="msg.type === 'contact'" class="msg-contact-card">
+                  <div class="contact-card-top">
+                    <img :src="(msg.mediaMeta?.avatar || msg.media_meta?.avatar) || 'https://api.dicebear.com/7.x/identicon/svg?seed=Contact'" class="avatar-md" />
+                    <div class="contact-card-info">
+                      <span class="contact-card-name">{{ (msg.mediaMeta?.displayName || msg.media_meta?.displayName) || 'Shared Contact' }}</span>
+                      <span class="contact-card-phone">{{ (msg.mediaMeta?.phoneNumber || msg.media_meta?.phoneNumber) || '' }}</span>
+                    </div>
+                  </div>
+                  <button @click="startChatWithUser(msg.mediaMeta?.id || msg.media_meta?.id)" class="btn-contact-msg">Message Direct 💬</button>
+                </div>
+
+                <!-- Poll Message -->
+                <div v-else-if="msg.type === 'poll'" class="msg-poll-card">
+                  <h4 class="poll-question">📊 {{ msg.content }}</h4>
+                  <div class="poll-options-list">
+                    <div 
+                      v-for="opt in (msg.mediaMeta?.options || msg.media_meta?.options || [])" 
+                      :key="opt.id" 
+                      class="poll-opt-item"
+                      @click="votePollOption(msg, opt.id)"
+                    >
+                      <div class="poll-opt-row">
+                        <span class="poll-opt-radio" :class="{ checked: opt.votes?.includes(authStore.user?.id) }"></span>
+                        <span class="poll-opt-text">{{ opt.text }}</span>
+                        <span class="poll-opt-count">{{ opt.votes?.length || 0 }}</span>
+                      </div>
+                      <div class="poll-progress-bg">
+                        <div 
+                          class="poll-progress-fill" 
+                          :style="{ width: getPollPercent(msg, opt.votes?.length || 0) + '%' }"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Message Meta & Delivery Ticks -->
@@ -413,10 +473,51 @@
           <!-- Chat Input Bar -->
           <footer class="chat-input-bar">
             <div class="input-actions-left">
-              <label class="btn-icon file-upload-label" title="Send Photo/Video">
-                📷
-                <input type="file" @change="handleFileUpload" accept="image/*,video/*,audio/*" style="display:none;" />
-              </label>
+              <!-- WhatsApp-style attachment toggle button -->
+              <button 
+                @click="showAttachmentMenu = !showAttachmentMenu" 
+                :class="['btn-icon', 'btn-attach', { active: showAttachmentMenu }]" 
+                title="Attach Media & Files"
+              >
+                📎
+              </button>
+
+              <!-- Attachment Popover Menu -->
+              <div v-if="showAttachmentMenu" class="attachment-menu-popover">
+                <div class="attachment-menu-grid">
+                  <button class="att-menu-item item-photos" @click="fileInputMedia?.click()">
+                    <span class="att-icon">📷</span>
+                    <span class="att-label">Photos & Videos</span>
+                  </button>
+                  <button class="att-menu-item item-doc" @click="fileInputDoc?.click()">
+                    <span class="att-icon">📄</span>
+                    <span class="att-label">Document</span>
+                  </button>
+                  <button class="att-menu-item item-camera" @click="fileInputCamera?.click()">
+                    <span class="att-icon">📸</span>
+                    <span class="att-label">Camera</span>
+                  </button>
+                  <button class="att-menu-item item-audio" @click="fileInputAudio?.click()">
+                    <span class="att-icon">🎵</span>
+                    <span class="att-label">Audio</span>
+                  </button>
+                  <button class="att-menu-item item-contact" @click="showAttachmentMenu = false; showContactPickerModal = true">
+                    <span class="att-icon">👤</span>
+                    <span class="att-label">Contact</span>
+                  </button>
+                  <button class="att-menu-item item-poll" @click="showAttachmentMenu = false; showCreatePollModal = true">
+                    <span class="att-icon">📊</span>
+                    <span class="att-label">Poll</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Hidden File Pickers -->
+              <input ref="fileInputMedia" type="file" accept="image/*,video/*" style="display:none" @change="handleFileSelected" />
+              <input ref="fileInputDoc" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.csv" style="display:none" @change="handleFileSelected" />
+              <input ref="fileInputCamera" type="file" accept="image/*" capture="environment" style="display:none" @change="handleFileSelected" />
+              <input ref="fileInputAudio" type="file" accept="audio/*" style="display:none" @change="handleFileSelected" />
+
               <button 
                 @click="isViewOnceMode = !isViewOnceMode" 
                 :class="['btn-icon', { active: isViewOnceMode }]"
@@ -467,6 +568,7 @@
           <div class="tab-sub-bar">
             <button :class="['tab-sub', { active: newChatTab === 'phone' }]" @click="newChatTab = 'phone'">By Phone Number</button>
             <button :class="['tab-sub', { active: newChatTab === 'user' }]" @click="newChatTab = 'user'">By Username</button>
+            <button class="tab-sub group-tab-btn" @click="showNewChatModal = false; showCreateGroupModal = true;">👥 Create Group</button>
           </div>
 
           <!-- Search by Phone Number -->
@@ -482,7 +584,11 @@
           <!-- Search by Username -->
           <div v-else class="new-chat-section mt-3">
             <input type="text" v-model="userSearchQuery" @input="handleUserSearch" placeholder="Search username or display name..." class="search-input-modal" />
-            <div class="search-results-list mt-2">
+            
+            <div v-if="peopleStore.isLoading" class="loading-spinner mt-2">Searching users...</div>
+            <div v-else-if="peopleStore.searchResults.length === 0 && userSearchQuery.trim()" class="empty-info-msg mt-2">No registered users found</div>
+            
+            <div v-else class="search-results-list mt-2">
               <div v-for="u in peopleStore.searchResults" :key="u.id" class="search-user-item" @click="startChatWithUser(u.id); showNewChatModal = false;">
                 <img :src="u.avatar" class="avatar-sm" />
                 <div class="user-item-info">
@@ -522,36 +628,73 @@
       </div>
     </div>
 
-    <!-- Settings Modal -->
-    <div v-if="showSettingsModal" class="modal-overlay">
-      <div class="modal-card settings-card">
-        <div class="modal-header">
-          <h3>⚙️ Application Settings</h3>
-          <button @click="showSettingsModal = false" class="btn-close">✕</button>
-        </div>
-        <div class="settings-body">
-          <div class="setting-row">
-            <span>Display Name:</span>
-            <input type="text" v-model="authStore.user.displayName" class="input-sm" />
-          </div>
-          <div class="setting-row">
-            <span>Location Discovery:</span>
-            <input type="checkbox" v-model="peopleStore.isLocationEnabled" />
-          </div>
-          <button @click="authStore.logout()" class="btn-danger btn-block mt-3">Log Out</button>
-        </div>
-      </div>
-    </div>
+    <!-- Settings & Profile Suite Modal -->
+    <SettingsModal 
+      v-if="showSettingsModal" 
+      :initialPage="settingsInitialPage"
+      @close="showSettingsModal = false" 
+    />
+
+    <!-- Create Group Chat Modal -->
+    <CreateGroupModal 
+      v-if="showCreateGroupModal"
+      @close="showCreateGroupModal = false"
+      @created="handleGroupCreated"
+    />
+
+    <!-- Group Information Modal -->
+    <GroupInfoModal 
+      v-if="showGroupInfoModal && chatStore.activeChatId"
+      :roomId="chatStore.activeChatId"
+      @close="showGroupInfoModal = false"
+      @updated="chatStore.fetchChats()"
+      @left="chatStore.fetchChats(); chatStore.activeChatId = null;"
+    />
+
+    <!-- Attachment & Media Modals -->
+    <MediaPreviewModal 
+      v-if="selectedFileForPreview" 
+      :file="selectedFileForPreview" 
+      @send="handleSendMediaFromPreview" 
+      @cancel="selectedFileForPreview = null" 
+    />
+
+    <MediaLightboxModal 
+      v-if="activeLightboxMedia" 
+      :mediaUrl="activeLightboxMedia.url" 
+      :caption="activeLightboxMedia.caption" 
+      :type="activeLightboxMedia.type" 
+      @close="activeLightboxMedia = null" 
+    />
+
+    <ContactPickerModal 
+      v-if="showContactPickerModal" 
+      @select="handleSendContact" 
+      @cancel="showContactPickerModal = false" 
+    />
+
+    <CreatePollModal 
+      v-if="showCreatePollModal" 
+      @create="handleSendPoll" 
+      @cancel="showCreatePollModal = false" 
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useAuthStore } from './stores/authStore.js';
 import { useChatStore } from './stores/chatStore.js';
 import { usePeopleStore } from './stores/peopleStore.js';
 import { useAdminStore } from './stores/adminStore.js';
 import { api } from './services/api.js';
+import SettingsModal from './components/SettingsModal.vue';
+import GroupInfoModal from './components/GroupInfoModal.vue';
+import CreateGroupModal from './components/CreateGroupModal.vue';
+import MediaPreviewModal from './components/MediaPreviewModal.vue';
+import MediaLightboxModal from './components/MediaLightboxModal.vue';
+import ContactPickerModal from './components/ContactPickerModal.vue';
+import CreatePollModal from './components/CreatePollModal.vue';
 
 const authStore = useAuthStore();
 const chatStore = useChatStore();
@@ -574,11 +717,26 @@ let recordingTimer = null;
 
 const showWallpaperPicker = ref(false);
 const showSettingsModal = ref(false);
+const settingsInitialPage = ref('main');
 const showNewChatModal = ref(false);
+const showGroupInfoModal = ref(false);
+const showCreateGroupModal = ref(false);
 const newChatTab = ref('phone');
 const manualPhoneInput = ref('');
 const phoneAddResult = ref(null);
 const userSearchQuery = ref('');
+
+const showAttachmentMenu = ref(false);
+const selectedFileForPreview = ref(null);
+const showContactPickerModal = ref(false);
+const showCreatePollModal = ref(false);
+const activeLightboxMedia = ref(null);
+const isUploadingMedia = ref(false);
+
+const fileInputMedia = ref(null);
+const fileInputDoc = ref(null);
+const fileInputCamera = ref(null);
+const fileInputAudio = ref(null);
 
 const showPinModal = ref(false);
 const hiddenPinInput = ref('');
@@ -602,11 +760,166 @@ const filteredChats = computed(() => {
 });
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleGlobalKeydown);
   if (authStore.isAuthenticated) {
     await authStore.fetchMe();
     await chatStore.fetchChats();
   }
 });
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown);
+});
+
+function fullFileUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) return url;
+  const baseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+  return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function getDocBadgeClass(fileName) {
+  if (!fileName) return 'file-badge';
+  const ext = fileName.split('.').pop().toLowerCase();
+  if (ext === 'pdf') return 'pdf-badge';
+  if (['doc', 'docx'].includes(ext)) return 'doc-badge';
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'xls-badge';
+  if (['ppt', 'pptx'].includes(ext)) return 'ppt-badge';
+  return 'file-badge';
+}
+
+function getDocExtension(fileName) {
+  if (!fileName) return 'FILE';
+  const parts = fileName.split('.');
+  return parts.length > 1 ? parts.pop().toUpperCase() : 'FILE';
+}
+
+function openLightbox(url, caption, type) {
+  activeLightboxMedia.value = {
+    url: fullFileUrl(url),
+    caption: caption || '',
+    type: type || 'image'
+  };
+}
+
+function handleFileSelected(e) {
+  const files = e.target.files;
+  if (files && files.length > 0) {
+    selectedFileForPreview.value = files[0];
+  }
+  showAttachmentMenu.value = false;
+  e.target.value = '';
+}
+
+async function handleSendMediaFromPreview({ file, caption, type }) {
+  if (!file) return;
+  selectedFileForPreview.value = null;
+  isUploadingMedia.value = true;
+  try {
+    const res = await api.uploadMedia(file);
+    const mediaMeta = {
+      name: file.name,
+      size: file.size,
+      mimeType: file.type,
+      caption: caption || ''
+    };
+    await chatStore.sendMessage({
+      type,
+      content: caption || '',
+      mediaUrl: res.mediaUrl,
+      mediaMeta,
+      isViewOnce: isViewOnceMode.value
+    });
+    isViewOnceMode.value = false;
+  } catch (err) {
+    console.error('Upload media failed:', err);
+    alert('Failed to upload attachment. Please try again.');
+  } finally {
+    isUploadingMedia.value = false;
+  }
+}
+
+async function handleSendContact(contact) {
+  showContactPickerModal.value = false;
+  await chatStore.sendMessage({
+    type: 'contact',
+    content: `Contact: ${contact.displayName}`,
+    mediaMeta: contact
+  });
+}
+
+async function handleSendPoll(pollData) {
+  showCreatePollModal.value = false;
+  await chatStore.sendMessage({
+    type: 'poll',
+    content: pollData.question,
+    mediaMeta: pollData
+  });
+}
+
+function votePollOption(msg, optionId) {
+  const currentUserId = authStore.user?.id;
+  if (!currentUserId) return;
+  const meta = msg.mediaMeta || msg.media_meta;
+  if (!meta || !meta.options) return;
+
+  meta.options.forEach(opt => {
+    if (!opt.votes) opt.votes = [];
+    if (opt.id === optionId) {
+      if (!opt.votes.includes(currentUserId)) {
+        opt.votes.push(currentUserId);
+      } else {
+        opt.votes = opt.votes.filter(id => id !== currentUserId);
+      }
+    }
+  });
+
+  msg.mediaMeta = { ...meta };
+}
+
+function getPollPercent(msg, voteCount) {
+  const meta = msg.mediaMeta || msg.media_meta;
+  if (!meta || !meta.options) return 0;
+  const totalVotes = meta.options.reduce((sum, o) => sum + (o.votes?.length || 0), 0);
+  if (totalVotes === 0) return 0;
+  return Math.round((voteCount / totalVotes) * 100);
+}
+
+function openSettingsPage(page = 'main') {
+  settingsInitialPage.value = page;
+  showSettingsModal.value = true;
+}
+
+function openProfilePage() {
+  openSettingsPage('profile');
+}
+
+function handleGroupCreated(roomId) {
+  chatStore.fetchChats();
+  chatStore.selectChat(roomId);
+}
+
+function handleGlobalKeydown(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    showNewChatModal.value = true;
+  } else if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+    e.preventDefault();
+    openSettingsPage('main');
+  } else if (e.key === 'Escape') {
+    if (showSettingsModal.value) showSettingsModal.value = false;
+    else if (showNewChatModal.value) showNewChatModal.value = false;
+    else if (showPinModal.value) showPinModal.value = false;
+  }
+}
 
 async function handleSendOtp() {
   if (!phoneInput.value) return;
@@ -800,8 +1113,8 @@ function playVoiceAudio(url) {
   display: flex;
   width: 100vw;
   height: 100vh;
-  background-color: #0369a1; /* Sky Blue App Background */
-  color: #ffffff; /* White Letter Characters */
+  background-color: #0f172a;
+  color: #f8fafc;
   font-family: 'Inter', system-ui, sans-serif;
   overflow: hidden;
 }
@@ -813,18 +1126,18 @@ function playVoiceAudio(url) {
   align-items: center;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle at top right, #0284c7, #0369a1);
+  background: radial-gradient(circle at top right, #1e1b4b, #0f172a);
 }
 
 .auth-card {
   width: 440px;
   max-width: 90%;
   padding: 2.5rem;
-  background: rgba(7, 89, 133, 0.9);
+  background: rgba(30, 41, 59, 0.85);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 1.5rem;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
 }
 
 .auth-header {
@@ -834,18 +1147,22 @@ function playVoiceAudio(url) {
 
 .logo-icon {
   font-size: 2.5rem;
-  color: #ffffff;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .logo-text {
   font-size: 2rem;
   font-weight: 800;
   margin-left: 0.5rem;
-  color: #ffffff;
+  background: linear-gradient(135deg, #6366f1, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .auth-subtitle {
-  color: #e0f2fe;
+  color: #94a3b8;
   font-size: 0.9rem;
   margin-top: 0.5rem;
 }
@@ -856,26 +1173,26 @@ function playVoiceAudio(url) {
 }
 
 .country-select {
-  background: #404040;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #0f172a;
+  color: #fff;
+  border: 1px solid #334155;
   border-radius: 0.75rem;
   padding: 0.75rem;
 }
 
 .phone-input, .otp-input {
   width: 100%;
-  background: #404040; /* #404040 gray input space */
-  color: #ffffff; /* White text */
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #0f172a;
+  color: #fff;
+  border: 1px solid #334155;
   border-radius: 0.75rem;
   padding: 0.75rem 1rem;
   font-size: 1.1rem;
 }
 
 .btn-primary {
-  background: #2B35AF; /* #2B35AF Send/Primary Button */
-  color: #ffffff;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: white;
   border: none;
   padding: 0.85rem 1.5rem;
   border-radius: 0.75rem;
@@ -886,8 +1203,7 @@ function playVoiceAudio(url) {
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  background: #1f278d;
-  box-shadow: 0 4px 12px rgba(43, 53, 175, 0.4);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
 }
 
 .btn-block { width: 100%; }
@@ -901,14 +1217,14 @@ function playVoiceAudio(url) {
   display: flex;
   align-items: center;
   margin: 1.5rem 0;
-  color: #e0f2fe;
+  color: #64748b;
   font-size: 0.75rem;
 }
 
 .dev-divider::before, .dev-divider::after {
   content: '';
   flex: 1;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 1px solid #334155;
 }
 
 .seed-users-grid {
@@ -922,16 +1238,16 @@ function playVoiceAudio(url) {
   align-items: center;
   gap: 0.75rem;
   padding: 0.6rem 1rem;
-  background: rgba(3, 105, 161, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid #334155;
   border-radius: 0.75rem;
-  color: #ffffff;
+  color: #f8fafc;
   cursor: pointer;
   transition: background 0.2s;
 }
 
 .seed-user-btn:hover {
-  background: #0284c7;
+  background: #334155;
 }
 
 .seed-avatar {
@@ -950,8 +1266,8 @@ function playVoiceAudio(url) {
 
 .sidebar-nav {
   width: 360px;
-  background: #0284c7; /* Sky Blue Sidebar */
-  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  background: #1e293b;
+  border-right: 1px solid #334155;
   display: flex;
   flex-direction: column;
 }
@@ -961,7 +1277,7 @@ function playVoiceAudio(url) {
   justify-content: space-between;
   align-items: center;
   padding: 1.2rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom: 1px solid #334155;
 }
 
 .nav-brand {
@@ -970,15 +1286,14 @@ function playVoiceAudio(url) {
   gap: 0.5rem;
   font-weight: 700;
   font-size: 1.3rem;
-  color: #ffffff;
 }
 
 .section-tabs {
   display: flex;
-  background: #0369a1;
+  background: #0f172a;
   padding: 0.5rem;
   gap: 0.25rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom: 1px solid #334155;
 }
 
 .tab-btn {
@@ -990,15 +1305,15 @@ function playVoiceAudio(url) {
   padding: 0.6rem 0.4rem;
   background: transparent;
   border: none;
-  color: #e0f2fe;
+  color: #94a3b8;
   border-radius: 0.5rem;
   font-size: 0.85rem;
   cursor: pointer;
 }
 
 .tab-btn.active {
-  background: #2B35AF;
-  color: #ffffff;
+  background: #334155;
+  color: #fff;
   font-weight: 600;
 }
 
@@ -1014,23 +1329,21 @@ function playVoiceAudio(url) {
   align-items: center;
   padding: 0.75rem 1rem;
   gap: 0.5rem;
-  background: #0369a1;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  background: #0f172a;
+  border-bottom: 1px solid #334155;
 }
 
 .search-input {
   flex: 1;
-  background: #404040; /* Gray search bar input */
+  background: transparent;
   border: none;
-  border-radius: 0.5rem;
-  padding: 0.4rem 0.75rem;
-  color: #ffffff;
+  color: #fff;
   outline: none;
 }
 
 .btn-icon-add {
-  background: #2B35AF;
-  color: #ffffff;
+  background: #6366f1;
+  color: #fff;
   border: none;
   border-radius: 50%;
   width: 28px;
@@ -1041,7 +1354,7 @@ function playVoiceAudio(url) {
 .empty-chats-box {
   padding: 3rem 1.5rem;
   text-align: center;
-  color: #ffffff;
+  color: #94a3b8;
 }
 
 .empty-icon {
@@ -1067,13 +1380,13 @@ function playVoiceAudio(url) {
   align-items: center;
   padding: 0.85rem 1rem;
   gap: 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .chat-item:hover, .chat-item.active {
-  background: #075985;
+  background: #334155;
 }
 
 .chat-item-content {
@@ -1090,7 +1403,6 @@ function playVoiceAudio(url) {
 .chat-name {
   font-weight: 600;
   font-size: 0.95rem;
-  color: #ffffff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1098,12 +1410,12 @@ function playVoiceAudio(url) {
 
 .chat-time {
   font-size: 0.75rem;
-  color: #e0f2fe;
+  color: #64748b;
 }
 
 .chat-preview {
   font-size: 0.85rem;
-  color: #bae6fd;
+  color: #94a3b8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1115,7 +1427,7 @@ function playVoiceAudio(url) {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #0369a1;
+  background: #0f172a;
 }
 
 .no-active-chat {
@@ -1123,7 +1435,7 @@ function playVoiceAudio(url) {
   justify-content: center;
   align-items: center;
   height: 100%;
-  color: #ffffff;
+  color: #64748b;
   text-align: center;
 }
 
@@ -1138,9 +1450,8 @@ function playVoiceAudio(url) {
   justify-content: space-between;
   align-items: center;
   padding: 0.85rem 1.5rem;
-  background: #0284c7;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-  color: #ffffff;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
 }
 
 .header-left {
@@ -1149,8 +1460,8 @@ function playVoiceAudio(url) {
   gap: 0.75rem;
 }
 
-.status-online { color: #34d399; font-weight: 500; }
-.status-offline { color: #bae6fd; }
+.status-online { color: #10b981; font-weight: 500; }
+.status-offline { color: #64748b; }
 
 .messages-body {
   flex: 1;
@@ -1161,8 +1472,8 @@ function playVoiceAudio(url) {
   gap: 0.75rem;
 }
 
-.wp-default { background: #c9e2ff; } /* Fresco (#c9e2ff) Chat Background */
-.wp-dark { background: #0284c7; }
+.wp-default { background: #c9e2ff; }
+.wp-dark { background: #020617; }
 .wp-gradient { background: linear-gradient(135deg, #c9e2ff, #bae6fd); }
 
 .message-bubble-wrapper {
@@ -1178,14 +1489,13 @@ function playVoiceAudio(url) {
   max-width: 65%;
   padding: 0.75rem 1rem;
   border-radius: 1rem;
-  background: #ffffff; /* Received message bubble white */
-  color: #0f172a; /* Dark text inside white bubble */
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  background: #1e293b;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
 }
 
 .outgoing .message-bubble {
-  background: #2B35AF; /* #2B35AF for outgoing message bubbles */
-  color: #ffffff; /* White letter characters */
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: white;
 }
 
 .chat-input-bar {
@@ -1193,39 +1503,29 @@ function playVoiceAudio(url) {
   align-items: center;
   gap: 0.75rem;
   padding: 1rem 1.5rem;
-  background: #0284c7;
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  background: #1e293b;
+  border-top: 1px solid #334155;
 }
 
 .message-textarea {
   flex: 1;
-  background: #404040; /* #404040 Gray Chat Typing Space */
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #0f172a;
+  border: 1px solid #334155;
   border-radius: 1.5rem;
-  padding: 0.65rem 1.2rem;
-  color: #ffffff; /* White Letter Character */
+  padding: 0.6rem 1.2rem;
+  color: #fff;
   outline: none;
   resize: none;
 }
 
-.message-textarea::placeholder {
-  color: #d4d4d4;
-}
-
 .btn-send {
-  background: #2B35AF; /* #2B35AF Send Button */
-  color: #ffffff; /* White text */
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  color: white;
   border: none;
-  padding: 0.65rem 1.4rem;
+  padding: 0.6rem 1.2rem;
   border-radius: 1.5rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-send:hover {
-  background: #1f278d;
-  box-shadow: 0 4px 12px rgba(43, 53, 175, 0.4);
 }
 
 .view-once-box {
@@ -1314,5 +1614,428 @@ function playVoiceAudio(url) {
   border-color: #6366f1;
   transform: translateX(-3px);
   box-shadow: 0 2px 10px rgba(99, 102, 241, 0.35);
+}
+
+.search-input-modal {
+  width: 100%;
+  padding: 0.85rem 1.15rem;
+  font-size: 1rem;
+  background: #0f172a;
+  color: #ffffff;
+  border: 1.5px solid #334155;
+  border-radius: 0.85rem;
+  outline: none;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.search-input-modal:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25), inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.search-input-modal::placeholder {
+  color: #64748b;
+  font-size: 0.95rem;
+}
+
+.nav-brand-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.clickable-header-left {
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.6rem;
+  transition: background 0.15s;
+}
+
+.clickable-header-left:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.group-tag-badge {
+  font-size: 0.72rem;
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.4rem;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.group-tab-btn {
+  background: rgba(99, 102, 241, 0.15) !important;
+  color: #a5b4fc !important;
+  font-weight: 600;
+  border-radius: 0.5rem;
+}
+
+.group-tab-btn:hover {
+  background: rgba(99, 102, 241, 0.3) !important;
+  color: #fff !important;
+}
+
+/* Attachment Menu Popover & Media Cards Styles */
+.input-actions-left {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-attach {
+  font-size: 1.25rem;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.5rem;
+  transition: background 0.2s;
+}
+
+.btn-attach:hover, .btn-attach.active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.attachment-menu-popover {
+  position: absolute;
+  bottom: 125%;
+  left: 0;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 1.25rem;
+  padding: 1rem;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  animation: fadeIn 0.2s ease-out;
+  width: 280px;
+}
+
+.attachment-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.att-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.75rem 0.5rem;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 0.85rem;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.att-menu-item:hover {
+  transform: translateY(-2px);
+  border-color: #6366f1;
+}
+
+.att-icon {
+  font-size: 1.4rem;
+}
+
+.att-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+/* Color highlights for attachment menu icons */
+.item-photos .att-icon { color: #ec4899; }
+.item-doc .att-icon { color: #3b82f6; }
+.item-camera .att-icon { color: #f59e0b; }
+.item-audio .att-icon { color: #10b981; }
+.item-contact .att-icon { color: #a855f7; }
+.item-poll .att-icon { color: #6366f1; }
+
+/* Image and Media Chat Bubbles */
+.msg-media-container {
+  margin-top: 0.35rem;
+  max-width: 300px;
+}
+
+.image-bubble-wrap {
+  cursor: pointer;
+}
+
+.msg-image-preview {
+  max-width: 280px;
+  max-height: 280px;
+  border-radius: 0.75rem;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.2s;
+}
+
+.msg-image-preview:hover {
+  transform: scale(1.02);
+}
+
+.msg-video-player {
+  max-width: 300px;
+  max-height: 240px;
+  border-radius: 0.75rem;
+  outline: none;
+  display: block;
+}
+
+.msg-caption {
+  font-size: 0.88rem;
+  margin-top: 0.4rem;
+  color: inherit;
+  word-break: break-word;
+}
+
+/* Document Cards */
+.msg-doc-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  min-width: 240px;
+  max-width: 320px;
+}
+
+.doc-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.doc-badge-sm {
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.5rem;
+  font-weight: 800;
+  font-size: 0.75rem;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.pdf-badge { background: #ef4444; }
+.doc-badge { background: #3b82f6; }
+.xls-badge { background: #10b981; }
+.ppt-badge { background: #f59e0b; }
+.file-badge { background: #6366f1; }
+
+.doc-card-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.doc-card-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #fff;
+}
+
+.doc-card-size {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.btn-doc-dl {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-doc-dl:hover {
+  background: #6366f1;
+  color: #fff;
+}
+
+/* Audio Player Card */
+.msg-audio-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  min-width: 250px;
+}
+
+.audio-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.audio-icon {
+  font-size: 1.4rem;
+}
+
+.audio-card-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.audio-card-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #fff;
+}
+
+.audio-card-size {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.msg-audio-element {
+  width: 100%;
+  height: 36px;
+  border-radius: 0.5rem;
+}
+
+/* Contact Card */
+.msg-contact-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  padding: 0.85rem;
+  min-width: 240px;
+}
+
+.contact-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.contact-card-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #fff;
+}
+
+.contact-card-phone {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  display: block;
+}
+
+.btn-contact-msg {
+  width: 100%;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #fff;
+  border: none;
+  padding: 0.5rem;
+  border-radius: 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Poll Card */
+.msg-poll-card {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.85rem;
+  padding: 0.85rem;
+  min-width: 260px;
+}
+
+.poll-question {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #fff;
+  margin: 0 0 0.75rem 0;
+}
+
+.poll-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.poll-opt-item {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.poll-opt-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  position: relative;
+  z-index: 2;
+}
+
+.poll-opt-radio {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #64748b;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.poll-opt-radio.checked {
+  border-color: #6366f1;
+  background: #6366f1;
+}
+
+.poll-opt-text {
+  flex: 1;
+  font-size: 0.85rem;
+  color: #fff;
+}
+
+.poll-opt-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #a5b4fc;
+}
+
+.poll-progress-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: transparent;
+}
+
+.poll-progress-fill {
+  height: 100%;
+  background: rgba(99, 102, 241, 0.25);
+  transition: width 0.3s ease;
+}
+
+@media (max-width: 768px) {
+  .attachment-menu-popover {
+    width: 240px;
+    bottom: 110%;
+  }
+  .message-bubble {
+    max-width: 85%;
+  }
 }
 </style>

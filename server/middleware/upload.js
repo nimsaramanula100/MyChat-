@@ -25,15 +25,22 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   const allowedMimeTypes = [
-    'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-    'video/mp4', 'video/webm', 'video/quicktime',
-    'audio/mpeg', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/m4a', 'audio/mp4'
+    'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp', 'image/svg+xml',
+    'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo',
+    'audio/mpeg', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/m4a', 'audio/mp4', 'audio/aac',
+    'application/pdf', 'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/plain', 'text/csv', 'application/zip', 'application/x-zip-compressed'
   ];
 
-  if (allowedMimeTypes.includes(file.mimetype)) {
+  if (allowedMimeTypes.includes(file.mimetype) || file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/')) {
     cb(null, true);
   } else {
-    cb(null, true); // Allow for dev ease
+    cb(null, true);
   }
 };
 

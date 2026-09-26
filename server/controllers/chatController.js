@@ -47,6 +47,13 @@ export async function getChats(req, res) {
         [room.room_id]
       );
 
+      // Member count for groups
+      let memberCount = 0;
+      if (room.type === 'group') {
+        const countRow = await db.get('SELECT COUNT(*) as count FROM chat_members WHERE room_id = ?', [room.room_id]);
+        memberCount = countRow ? countRow.count : 0;
+      }
+
       // Unread count
       const unreadCountRow = await db.get(
         `SELECT COUNT(*) AS count
@@ -60,7 +67,8 @@ export async function getChats(req, res) {
         id: room.room_id,
         type: room.type,
         name: room.type === 'group' ? room.group_name : (partner ? partner.display_name : 'Chat'),
-        avatar: room.type === 'group' ? room.group_avatar : (partner ? partner.avatar : ''),
+        avatar: room.type === 'group' ? (room.group_avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${room.group_name || 'Group'}`) : (partner ? partner.avatar : ''),
+        memberCount: memberCount,
         partner: partner ? {
           id: partner.id,
           displayName: partner.display_name,
@@ -101,15 +109,18 @@ export async function getChats(req, res) {
 
 export async function createChat(req, res) {
   try {
-    const { targetUserId, type, name, members } = req.body;
+    const { targetUserId, type, name, avatar, members } = req.body;
     const db = await getDb();
     const currentUserId = req.user.id;
 
     if (type === 'group') {
       const roomId = generateId();
+      const groupName = name ? name.trim() : 'New Group';
+      const groupAvatar = avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(groupName)}`;
+
       await db.run(
         `INSERT INTO chat_rooms (id, type, name, avatar, created_by) VALUES (?, 'group', ?, ?, ?)`,
-        [roomId, name || 'New Group', `https://api.dicebear.com/7.x/identicon/svg?seed=${name || 'Group'}`, currentUserId]
+        [roomId, groupName, groupAvatar, currentUserId]
       );
 
       // Add creator as admin
@@ -118,7 +129,7 @@ export async function createChat(req, res) {
         [generateId(), roomId, currentUserId]
       );
 
-      // Add other members
+      // Add other selected members
       if (Array.isArray(members)) {
         for (const mId of members) {
           if (mId !== currentUserId) {
@@ -130,6 +141,15 @@ export async function createChat(req, res) {
         }
       }
 
+      // Add initial system creation message
+      const creatorUser = await db.get('SELECT display_name FROM users WHERE id = ?', [currentUserId]);
+      const creatorName = creatorUser ? creatorUser.display_name : 'Someone';
+
+      await db.run(
+        `INSERT INTO messages (id, room_id, sender_id, type, content) VALUES (?, ?, ?, 'system', ?)`,
+        [generateId(), roomId, currentUserId, `${creatorName} created group "${groupName}"`]
+      );
+
       return res.json({ success: true, roomId });
     } else {
       // Direct or Private chat
@@ -137,7 +157,6 @@ export async function createChat(req, res) {
         return res.status(400).json({ error: 'Target user ID is required' });
       }
 
-      // Check if existing room exists
       const existingRoom = await db.get(
         `SELECT r.id FROM chat_rooms r
          JOIN chat_members m1 ON r.id = m1.room_id AND m1.user_id = ?
@@ -173,13 +192,140 @@ export async function createChat(req, res) {
   }
 }
 
+export async function getGroupInfo(req, res) {
+  try {
+    const { roomId } = req.params;
+    const db = await getDb();
+
+    const room = await db.get('SELECT * FROM chat_rooms WHERE id = ? AND type = "group"', [roomId]);
+    if (!room) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+
+    const members = await db.all(
+      `SELECT m.role, m.joined_at, u.id, u.display_name, u.username, u.avatar, u.phone_number
+       FROM chat_members m
+       JOIN users u ON m.user_id = u.id
+       WHERE m.room_id = ?`,
+      [roomId]
+    );
+
+    const currentUserMember = members.find(m => m.id === req.user.id);
+    if (!currentUserMember) {
+      return res.status(403).json({ error: 'You are not a member of this group' });
+    }
+
+    return res.json({
+      group: {
+        id: room.id,
+        name: room.name,
+        avatar: room.avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(room.name)}`,
+        createdBy: room.created_by,
+        createdAt: room.created_at,
+        isAdmin: currentUserMember.role === 'admin',
+        members: members.map(m => ({
+          id: m.id,
+          displayName: m.display_name,
+          username: m.username,
+          avatar: m.avatar,
+          phoneNumber: m.phone_number,
+          role: m.role,
+          joinedAt: m.joined_at
+        }))
+      }
+    });
+  } catch (err) {
+    console.error('getGroupInfo error:', err);
+    return res.status(500).json({ error: 'Failed to fetch group details' });
+  }
+}
+
+export async function updateGroupInfo(req, res) {
+  try {
+    const { roomId } = req.params;
+    const { name, avatar } = req.body;
+    const db = await getDb();
+
+    const member = await db.get('SELECT role FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
+    if (!member || member.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin permission required to edit group info' });
+    }
+
+    await db.run(
+      'UPDATE chat_rooms SET name = COALESCE(?, name), avatar = COALESCE(?, avatar) WHERE id = ?',
+      [name ? name.trim() : null, avatar ? avatar.trim() : null, roomId]
+    );
+
+    return res.json({ success: true, message: 'Group details updated' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update group info' });
+  }
+}
+
+export async function addGroupMembers(req, res) {
+  try {
+    const { roomId } = req.params;
+    const { members } = req.body;
+    const db = await getDb();
+
+    const member = await db.get('SELECT role FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
+    if (!member || member.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin permission required to add members' });
+    }
+
+    if (Array.isArray(members)) {
+      for (const mId of members) {
+        const existing = await db.get('SELECT id FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, mId]);
+        if (!existing) {
+          await db.run(
+            'INSERT INTO chat_members (id, room_id, user_id, role) VALUES (?, ?, ?, "member")',
+            [generateId(), roomId, mId]
+          );
+        }
+      }
+    }
+
+    return res.json({ success: true, message: 'Members added' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to add members' });
+  }
+}
+
+export async function removeGroupMember(req, res) {
+  try {
+    const { roomId, targetUserId } = req.params;
+    const db = await getDb();
+
+    const currentMember = await db.get('SELECT role FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
+    if (!currentMember || (currentMember.role !== 'admin' && req.user.id !== targetUserId)) {
+      return res.status(403).json({ error: 'Admin permission required to remove member' });
+    }
+
+    await db.run('DELETE FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, targetUserId]);
+    return res.json({ success: true, message: 'Member removed' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to remove member' });
+  }
+}
+
+export async function leaveGroup(req, res) {
+  try {
+    const { roomId } = req.params;
+    const db = await getDb();
+
+    await db.run('DELETE FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
+    return res.json({ success: true, message: 'Left group successfully' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to leave group' });
+  }
+}
+
 export async function getMessages(req, res) {
   try {
     const { roomId } = req.params;
     const { limit = 50, before } = req.query;
     const db = await getDb();
 
-    // Verify membership
     const isMember = await db.get('SELECT id FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
     if (!isMember) {
       return res.status(403).json({ error: 'You are not a member of this chat' });
@@ -203,11 +349,9 @@ export async function getMessages(req, res) {
 
     const messages = await db.all(query, params);
 
-    // Attach reactions & reads
     for (const msg of messages) {
       msg.mediaMeta = msg.media_meta ? JSON.parse(msg.media_meta) : {};
       
-      // Expire view once media if consumed
       if (msg.is_view_once && msg.is_consumed) {
         msg.content = 'Viewed Media (Expired)';
         msg.media_url = '';
@@ -264,7 +408,6 @@ export async function sendMessage(req, res) {
       ]
     );
 
-    // Mark read for sender
     await db.run(
       `INSERT INTO message_reads (id, message_id, user_id) VALUES (?, ?, ?)`,
       [generateId(), msgId, req.user.id]
@@ -275,7 +418,15 @@ export async function sendMessage(req, res) {
        FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.id = ?`,
       [msgId]
     );
+    const { tempId } = req.body;
     message.mediaMeta = JSON.parse(message.media_meta || '{}');
+    if (tempId) message.tempId = tempId;
+
+    // Broadcast to room via Socket.IO
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`room:${roomId}`).emit('new_message', message);
+    }
 
     return res.json({ success: true, message });
   } catch (err) {

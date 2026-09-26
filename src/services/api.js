@@ -57,7 +57,12 @@ export const api = {
 
   // Chats & Messages
   getChats: () => request('/chats'),
-  createChat: (targetUserId, type = 'direct', name = '', members = []) => request('/chats', { method: 'POST', body: { targetUserId, type, name, members } }),
+  createChat: (targetUserId, type = 'direct', name = '', members = [], avatar = '') => request('/chats', { method: 'POST', body: { targetUserId, type, name, members, avatar } }),
+  getGroupInfo: (roomId) => request(`/chats/${roomId}/group-info`),
+  updateGroupInfo: (roomId, name, avatar) => request(`/chats/${roomId}/group-info`, { method: 'PATCH', body: { name, avatar } }),
+  addGroupMembers: (roomId, members) => request(`/chats/${roomId}/members`, { method: 'POST', body: { members } }),
+  removeGroupMember: (roomId, targetUserId) => request(`/chats/${roomId}/members/${targetUserId}`, { method: 'DELETE' }),
+  leaveGroup: (roomId) => request(`/chats/${roomId}/leave`, { method: 'POST' }),
   getMessages: (roomId, limit = 50, before = null) => request(`/chats/${roomId}/messages?limit=${limit}${before ? `&before=${before}` : ''}`),
   sendMessage: (roomId, payload) => request(`/chats/${roomId}/messages`, { method: 'POST', body: payload }),
   consumeViewOnce: (messageId) => request(`/chats/messages/${messageId}/consume-view-once`, { method: 'POST' }),
