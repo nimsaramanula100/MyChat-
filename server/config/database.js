@@ -1,0 +1,212 @@
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let dbInstance = null;
+
+export async function getDb() {
+  if (dbInstance) return dbInstance;
+
+  const dbPath = path.resolve(__dirname, '../../chat_app.db');
+  
+  dbInstance = await open({
+    filename: dbPath,
+    driver: sqlite3.Database
+  });
+
+  // Enable foreign keys
+  await dbInstance.run('PRAGMA foreign_keys = ON');
+
+  // Initialize Schema
+  await dbInstance.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      phone_number TEXT UNIQUE NOT NULL,
+      display_name TEXT NOT NULL,
+      username TEXT UNIQUE NOT NULL,
+      bio TEXT DEFAULT '',
+      avatar TEXT DEFAULT '',
+      is_admin INTEGER DEFAULT 0,
+      is_suspended INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      device_name TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      ip_address TEXT DEFAULT '',
+      token TEXT UNIQUE NOT NULL,
+      last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS otp_verifications (
+      id TEXT PRIMARY KEY,
+      phone_number TEXT NOT NULL,
+      otp_code TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      verified INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS contacts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      contact_id TEXT NOT NULL,
+      alias TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+      FOREIGN KEY (contact_id) REFERENCES users (id) ON DELETE CASCADE,
+      UNIQUE(user_id, contact_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS blocked_users (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      blocked_user_id TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+      FOREIGN KEY (blocked_user_id) REFERENCES users (id) ON DELETE CASCADE,
+      UNIQUE(user_id, blocked_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_rooms (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      name TEXT DEFAULT '',
+      avatar TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      created_by TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_members (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT DEFAULT 'member',
+      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      is_pinned INTEGER DEFAULT 0,
+      is_muted INTEGER DEFAULT 0,
+      is_hidden INTEGER DEFAULT 0,
+      is_locked INTEGER DEFAULT 0,
+      custom_background TEXT DEFAULT '',
+      FOREIGN KEY (room_id) REFERENCES chat_rooms (id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+      UNIQUE(room_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      sender_id TEXT NOT NULL,
+      type TEXT DEFAULT 'text',
+      content TEXT DEFAULT '',
+      media_url TEXT DEFAULT '',
+      media_meta TEXT DEFAULT '{}',
+      reply_to_id TEXT DEFAULT NULL,
+      is_disappearing INTEGER DEFAULT 0,
+      disappearing_seconds INTEGER DEFAULT 0,
+      is_view_once INTEGER DEFAULT 0,
+      is_consumed INTEGER DEFAULT 0,
+      is_edited INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (room_id) REFERENCES chat_rooms (id) ON DELETE CASCADE,
+      FOREIGN KEY (sender_id) REFERENCES users (id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS message_reactions (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      emoji TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+      UNIQUE(message_id, user_id, emoji)
+    );
+
+    CREATE TABLE IF NOT EXISTS message_reads (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+      UNIQUE(message_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS hidden_chats (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      room_id TEXT NOT NULL,
+      pin_hash TEXT NOT NULL,
+      hidden_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+      FOREIGN KEY (room_id) REFERENCES chat_rooms (id) ON DELETE CASCADE,
+      UNIQUE(user_id, room_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS locked_chats (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      room_id TEXT NOT NULL,
+      pin_hash TEXT NOT NULL,
+      locked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+      FOREIGN KEY (room_id) REFERENCES chat_rooms (id) ON DELETE CASCADE,
+      UNIQUE(user_id, room_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS user_privacy_settings (
+      user_id TEXT PRIMARY KEY,
+      phone_privacy TEXT DEFAULT 'contacts',
+      last_seen_privacy TEXT DEFAULT 'everyone',
+      profile_photo_privacy TEXT DEFAULT 'everyone',
+      online_status_privacy TEXT DEFAULT 'everyone',
+      location_discovery_enabled INTEGER DEFAULT 1,
+      who_can_message TEXT DEFAULT 'everyone',
+      read_receipts_enabled INTEGER DEFAULT 1,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS user_security_settings (
+      user_id TEXT PRIMARY KEY,
+      app_lock_pin_hash TEXT DEFAULT '',
+      auto_lock_minutes INTEGER DEFAULT 0,
+      notification_privacy TEXT DEFAULT 'preview',
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS user_locations (
+      user_id TEXT PRIMARY KEY,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      approx_location_name TEXT DEFAULT '',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS reports (
+      id TEXT PRIMARY KEY,
+      reporter_id TEXT NOT NULL,
+      reported_user_id TEXT NOT NULL,
+      category TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (reporter_id) REFERENCES users (id) ON DELETE CASCADE,
+      FOREIGN KEY (reported_user_id) REFERENCES users (id) ON DELETE CASCADE
+    );
+  `);
+
+  return dbInstance;
+}
