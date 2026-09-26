@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   getMe, updateProfile, updatePrivacySettings, updateSecuritySettings,
-  updateLocation, getNearbyPeople, searchUsers, getContacts, addContact, deleteAccount
+  updateLocation, getNearbyPeople, searchUsers, getContacts, addContact, syncContacts, deleteAccount
 } from '../controllers/userController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
@@ -18,6 +18,7 @@ router.get('/nearby', authenticateToken, getNearbyPeople);
 router.get('/search', authenticateToken, searchUsers);
 router.get('/contacts', authenticateToken, getContacts);
 router.post('/contacts', authenticateToken, addContact);
+router.post('/contacts/sync', authenticateToken, syncContacts);
 
 router.delete('/me', authenticateToken, deleteAccount);
 

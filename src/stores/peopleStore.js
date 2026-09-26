@@ -6,6 +6,7 @@ export const usePeopleStore = defineStore('people', {
     nearbyPeople: [],
     searchResults: [],
     contacts: [],
+    unregisteredContacts: [],
     blockedUsers: [],
     isLocationEnabled: true,
     isLoading: false,
@@ -53,6 +54,21 @@ export const usePeopleStore = defineStore('people', {
     async addContact(userId, alias = '') {
       await api.addContact(userId, alias);
       await this.fetchContacts();
+    },
+
+    async addContactByPhone(phoneNumber, alias = '') {
+      const res = await api.addContact(null, alias, phoneNumber);
+      if (res.registered) {
+        await this.fetchContacts();
+      }
+      return res;
+    },
+
+    async syncContacts(phoneList) {
+      const res = await api.syncContacts(phoneList);
+      this.unregisteredContacts = res.unregistered || [];
+      await this.fetchContacts();
+      return res;
     },
 
     async reportUser(userId, category, description) {

@@ -62,7 +62,7 @@
 
           <!-- Quick Dev Test Login Buttons -->
           <div class="dev-quick-login">
-            <div class="dev-divider"><span>OR TEST WITH SEED ACCOUNTS</span></div>
+            <div class="dev-divider"><span>OR QUICK TEST ACCOUNTS</span></div>
             <div class="seed-users-grid">
               <button 
                 v-for="user in devSeedUsers" 
@@ -73,7 +73,7 @@
                 <img :src="user.avatar" class="seed-avatar" />
                 <div class="seed-info">
                   <span class="seed-name">{{ user.name }}</span>
-                  <span class="seed-role">{{ user.role }}</span>
+                  <span class="seed-role">{{ user.phone }}</span>
                 </div>
               </button>
             </div>
@@ -120,7 +120,7 @@
             <span class="brand-logo">⚡</span>
             <span class="brand-name">MyChat</span>
           </div>
-          <div class="user-status-avatar" @click="showSettingsModal = true">
+          <div class="user-status-avatar" @click="showSettingsModal = true" title="Settings & Profile">
             <img :src="authStore.user?.avatar" class="avatar-sm" />
             <span class="online-indicator"></span>
           </div>
@@ -198,9 +198,17 @@
 
           <div class="chat-items-scroll">
             <div v-if="chatStore.isLoadingChats" class="loading-spinner">Loading chats...</div>
-            <div v-else-if="filteredChats.length === 0" class="empty-chats">
-              <span>No chats found</span>
-              <button @click="showNewChatModal = true" class="btn-secondary btn-sm mt-2">Start a Chat</button>
+            
+            <!-- Empty Chat List Screen (Section 29) -->
+            <div v-else-if="filteredChats.length === 0" class="empty-chats-box">
+              <span class="empty-icon">💬</span>
+              <h4>No conversations yet</h4>
+              <p>Find a friend or search for someone to start chatting in real time.</p>
+              <div class="empty-actions">
+                <button @click="switchTab('nearby')" class="btn-primary btn-sm">Find People</button>
+                <button @click="switchTab('contacts')" class="btn-secondary btn-sm">Contacts</button>
+                <button @click="showNewChatModal = true" class="btn-secondary btn-sm">Add Contact</button>
+              </div>
             </div>
 
             <div 
@@ -223,7 +231,7 @@
                 </div>
                 <div class="chat-item-bottom">
                   <span class="chat-preview">
-                    <span v-if="chatStore.typingUsers[chat.id]?.size > 0" class="typing-text">typing...</span>
+                    <span v-if="chatStore.typingUsers[chat.id]?.size > 0" class="typing-active">typing...</span>
                     <span v-else-if="chat.lastMessage">{{ chat.lastMessage.senderName }}: {{ chat.lastMessage.content }}</span>
                     <span v-else class="no-msg">No messages yet</span>
                   </span>
@@ -257,19 +265,32 @@
           </div>
         </div>
 
-        <!-- Contacts View -->
+        <!-- Contacts View (Sections 4, 5, 6, 8) -->
         <div v-else-if="activeTab === 'contacts'" class="contacts-container">
           <div class="section-header">
             <h3>📇 My Contacts</h3>
+            <button @click="showNewChatModal = true" class="btn-primary btn-sm">+ Add Contact</button>
           </div>
+
+          <!-- Web Limitation Banner (Section 6) -->
+          <div class="web-contact-notice">
+            <span class="notice-icon">📱</span>
+            <div class="notice-text">
+              <strong>Contact access is not available on this web device.</strong>
+              <p>You can add contacts manually using their phone number below.</p>
+            </div>
+          </div>
+
           <div class="contacts-scroll">
+            <h4 class="contact-section-title">Registered on MyChat</h4>
+            <div v-if="peopleStore.contacts.length === 0" class="empty-sub">No contacts added yet.</div>
             <div v-for="c in peopleStore.contacts" :key="c.id" class="contact-item">
               <img :src="c.avatar" class="avatar-md" />
               <div class="contact-info">
                 <span class="contact-name">{{ c.display_name }}</span>
                 <span class="contact-phone">{{ c.phone_number }}</span>
               </div>
-              <button @click="startChatWithUser(c.id)" class="btn-secondary btn-sm">Chat</button>
+              <button @click="startChatWithUser(c.id)" class="btn-primary btn-sm">Message</button>
             </div>
           </div>
         </div>
@@ -303,6 +324,10 @@
             <span class="banner-hero-icon">⚡</span>
             <h2>Welcome to MyChat</h2>
             <p>Select a conversation from the sidebar or find nearby people to start messaging in real time.</p>
+            <div class="welcome-actions mt-3">
+              <button @click="showNewChatModal = true" class="btn-primary">Start New Chat</button>
+              <button @click="switchTab('contacts')" class="btn-secondary ml-2">My Contacts</button>
+            </div>
           </div>
         </div>
 
@@ -316,8 +341,8 @@
                 <span class="header-name">{{ chatStore.activeChat?.name }}</span>
                 <span class="header-sub">
                   <span v-if="chatStore.typingUsers[chatStore.activeChatId]?.size > 0" class="typing-active">typing...</span>
-                  <span v-else-if="chatStore.onlineUsers.has(chatStore.activeChat?.partner?.id)">Online</span>
-                  <span v-else>Offline</span>
+                  <span v-else-if="chatStore.onlineUsers.has(chatStore.activeChat?.partner?.id)" class="status-online">Online</span>
+                  <span v-else class="status-offline">Offline</span>
                 </span>
               </div>
             </div>
@@ -366,16 +391,23 @@
                 <div v-else-if="msg.type === 'voice'" class="msg-voice-player">
                   <button @click="playVoiceAudio(msg.media_url)" class="voice-play-btn">▶</button>
                   <div class="voice-waveform"></div>
-                  <span class="voice-duration">0:15</span>
+                  <span class="voice-duration">Voice Note</span>
                 </div>
 
-                <!-- Message Meta -->
+                <!-- Message Meta & Delivery Ticks -->
                 <div class="msg-meta">
                   <span class="msg-time">{{ formatTime(msg.created_at) }}</span>
                   <span v-if="msg.sender_id === authStore.user?.id" class="read-ticks">✓✓</span>
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- Live Microphone Voice Recorder Status Overlay -->
+          <div v-if="isRecordingVoice" class="voice-recording-banner">
+            <span class="rec-pulse">🔴 Recording... {{ recordingDuration }}s</span>
+            <button @click="stopAndSendVoice" class="btn-danger btn-xs ml-2">Stop & Send 🚀</button>
+            <button @click="cancelVoiceRecord" class="btn-secondary btn-xs ml-1">Cancel</button>
           </div>
 
           <!-- Chat Input Bar -->
@@ -405,9 +437,9 @@
 
             <div class="input-actions-right">
               <button 
-                @click="isRecordingVoice = !isRecordingVoice" 
+                @click="startVoiceRecord" 
                 :class="['btn-icon', { recording: isRecordingVoice }]"
-                title="Voice Recording"
+                title="Microphone Recording"
               >
                 🎙️
               </button>
@@ -419,6 +451,47 @@
     </div>
 
     <!-- Modals -->
+    <!-- New Chat / Add Contact Modal (Section 7, 30) -->
+    <div v-if="showNewChatModal" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>➕ Start New Chat / Add Contact</h3>
+          <button @click="showNewChatModal = false" class="btn-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="tab-sub-bar">
+            <button :class="['tab-sub', { active: newChatTab === 'phone' }]" @click="newChatTab = 'phone'">By Phone Number</button>
+            <button :class="['tab-sub', { active: newChatTab === 'user' }]" @click="newChatTab = 'user'">By Username</button>
+          </div>
+
+          <!-- Search by Phone Number -->
+          <div v-if="newChatTab === 'phone'" class="new-chat-section mt-3">
+            <label class="input-label">Enter Mobile Phone Number:</label>
+            <input type="tel" v-model="manualPhoneInput" placeholder="+94712345678" class="phone-input" />
+            <button @click="handleAddContactByPhone" class="btn-primary btn-block mt-2">Search & Add Contact</button>
+            <p v-if="phoneAddResult" :class="['result-msg', phoneAddResult.registered ? 'success' : 'error']">
+              {{ phoneAddResult.message }}
+            </p>
+          </div>
+
+          <!-- Search by Username -->
+          <div v-else class="new-chat-section mt-3">
+            <input type="text" v-model="userSearchQuery" @input="handleUserSearch" placeholder="Search username or display name..." class="search-input-modal" />
+            <div class="search-results-list mt-2">
+              <div v-for="u in peopleStore.searchResults" :key="u.id" class="search-user-item" @click="startChatWithUser(u.id); showNewChatModal = false;">
+                <img :src="u.avatar" class="avatar-sm" />
+                <div class="user-item-info">
+                  <span class="user-item-name">{{ u.displayName }}</span>
+                  <span class="user-item-sub">@{{ u.username }}</span>
+                </div>
+                <button class="btn-primary btn-xs">Chat</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- PIN Prompt Modal for Hidden Chats -->
     <div v-if="showPinModal" class="modal-overlay">
       <div class="modal-card">
@@ -489,8 +562,19 @@ const searchQuery = ref('');
 const messageInput = ref('');
 const isViewOnceMode = ref(false);
 const isRecordingVoice = ref(false);
+const recordingDuration = ref(0);
+let mediaRecorder = null;
+let audioChunks = [];
+let recordingTimer = null;
+
 const showWallpaperPicker = ref(false);
 const showSettingsModal = ref(false);
+const showNewChatModal = ref(false);
+const newChatTab = ref('phone');
+const manualPhoneInput = ref('');
+const phoneAddResult = ref(null);
+const userSearchQuery = ref('');
+
 const showPinModal = ref(false);
 const hiddenPinInput = ref('');
 const activeViewOnceMsg = ref(null);
@@ -499,9 +583,9 @@ const themeClass = ref('theme-dark');
 const wallpaperClass = ref('wp-default');
 
 const devSeedUsers = [
-  { phone: '+94771234567', name: 'Alex Rivera (Admin)', role: 'Product Lead', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80' },
-  { phone: '+94779876543', name: 'Sophia Chen', role: 'Architect', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80' },
-  { phone: '+94712223344', name: 'Marcus Vance', role: 'Dev', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80' }
+  { phone: '+94771234567', name: 'Alex Rivera (Admin)', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80' },
+  { phone: '+94779876543', name: 'Sophia Chen', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80' },
+  { phone: '+94712223344', name: 'Marcus Vance', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80' }
 ];
 
 const filteredChats = computed(() => {
@@ -566,12 +650,80 @@ async function handleFileUpload(e) {
   if (!file) return;
   const res = await api.uploadMedia(file);
   await chatStore.sendMessage({
-    type: file.type.startsWith('image') ? 'image' : 'video',
+    type: file.type.startsWith('image') ? 'image' : (file.type.startsWith('video') ? 'video' : 'voice'),
     mediaUrl: res.mediaUrl,
     mediaMeta: res.mediaMeta,
     isViewOnce: isViewOnceMode.value
   });
   isViewOnceMode.value = false;
+}
+
+/* Microphone Voice Recording */
+async function startVoiceRecord() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+
+    mediaRecorder.start();
+    isRecordingVoice.value = true;
+    recordingDuration.value = 0;
+    
+    recordingTimer = setInterval(() => {
+      recordingDuration.value++;
+    }, 1000);
+  } catch (err) {
+    alert('Microphone access denied or not supported on this browser.');
+  }
+}
+
+async function stopAndSendVoice() {
+  if (!mediaRecorder) return;
+  
+  clearInterval(recordingTimer);
+  mediaRecorder.stop();
+  
+  mediaRecorder.onstop = async () => {
+    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    const audioFile = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
+    
+    const res = await api.uploadMedia(audioFile);
+    await chatStore.sendMessage({
+      type: 'voice',
+      mediaUrl: res.mediaUrl,
+      mediaMeta: { duration: recordingDuration.value }
+    });
+
+    isRecordingVoice.value = false;
+    recordingDuration.value = 0;
+  };
+}
+
+function cancelVoiceRecord() {
+  if (mediaRecorder) mediaRecorder.stop();
+  clearInterval(recordingTimer);
+  isRecordingVoice.value = false;
+  recordingDuration.value = 0;
+}
+
+async function handleAddContactByPhone() {
+  if (!manualPhoneInput.value) return;
+  const res = await peopleStore.addContactByPhone(manualPhoneInput.value);
+  phoneAddResult.value = res;
+  if (res.registered && res.contact) {
+    setTimeout(async () => {
+      showNewChatModal.value = false;
+      await startChatWithUser(res.contact.id);
+    }, 1000);
+  }
+}
+
+function handleUserSearch() {
+  peopleStore.search(userSearchQuery.value);
 }
 
 function handleOpenViewOnce(msg) {
@@ -881,6 +1033,25 @@ function playVoiceAudio(url) {
   cursor: pointer;
 }
 
+.empty-chats-box {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.empty-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
 .chat-items-scroll {
   flex: 1;
   overflow-y: auto;
@@ -971,6 +1142,9 @@ function playVoiceAudio(url) {
   gap: 0.75rem;
 }
 
+.status-online { color: #10b981; font-weight: 500; }
+.status-offline { color: #64748b; }
+
 .messages-body {
   flex: 1;
   padding: 1.5rem;
@@ -1045,4 +1219,53 @@ function playVoiceAudio(url) {
   border-radius: 0.75rem;
   cursor: pointer;
 }
+
+.voice-recording-banner {
+  background: #991b1b;
+  color: white;
+  padding: 0.5rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.web-contact-notice {
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px dashed #475569;
+  padding: 0.85rem 1rem;
+  margin: 1rem;
+  border-radius: 0.75rem;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+
+.tab-sub-bar {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid #334155;
+  padding-bottom: 0.5rem;
+}
+
+.tab-sub {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  padding: 0.5rem;
+  cursor: pointer;
+}
+
+.tab-sub.active {
+  color: #6366f1;
+  border-bottom: 2px solid #6366f1;
+  font-weight: 600;
+}
+
+.result-msg {
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.result-msg.success { color: #10b981; }
+.result-msg.error { color: #ef4444; }
 </style>

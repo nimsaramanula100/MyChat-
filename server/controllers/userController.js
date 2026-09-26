@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { getDb } from '../config/database.js';
 import { calculateHaversineDistance } from '../utils/distance.js';
+import { normalizePhoneNumber } from '../utils/phone.js';
 
 function generateId() {
   return crypto.randomUUID();
@@ -304,22 +305,107 @@ export async function getContacts(req, res) {
 
 export async function addContact(req, res) {
   try {
-    const { contactUserId, alias } = req.body;
-    if (!contactUserId) {
-      return res.status(400).json({ error: 'Target user ID is required' });
+    const { contactUserId, phoneNumber, alias } = req.body;
+    const db = await getDb();
+
+    let targetUser = null;
+
+    if (contactUserId) {
+      targetUser = await db.get('SELECT * FROM users WHERE id = ?', [contactUserId]);
+    } else if (phoneNumber) {
+      const cleanPhone = normalizePhoneNumber(phoneNumber);
+      targetUser = await db.get('SELECT * FROM users WHERE phone_number = ?', [cleanPhone]);
     }
 
-    const db = await getDb();
+    if (!targetUser) {
+      return res.status(404).json({
+        registered: false,
+        error: 'This number is not registered on MyChat.'
+      });
+    }
+
+    if (targetUser.id === req.user.id) {
+      return res.status(400).json({ error: 'You cannot add yourself as a contact.' });
+    }
+
     await db.run(
       `INSERT INTO contacts (id, user_id, contact_id, alias)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(user_id, contact_id) DO UPDATE SET alias = excluded.alias`,
-      [generateId(), req.user.id, contactUserId, alias || '']
+      [generateId(), req.user.id, targetUser.id, alias || targetUser.display_name]
     );
 
-    return res.json({ success: true, message: 'Contact added successfully' });
+    return res.json({
+      success: true,
+      registered: true,
+      message: 'Contact added successfully',
+      contact: {
+        id: targetUser.id,
+        displayName: targetUser.display_name,
+        username: targetUser.username,
+        avatar: targetUser.avatar,
+        bio: targetUser.bio,
+        phoneNumber: targetUser.phone_number
+      }
+    });
   } catch (err) {
+    console.error('addContact error:', err);
     return res.status(500).json({ error: 'Failed to add contact' });
+  }
+}
+
+export async function syncContacts(req, res) {
+  try {
+    const { phoneNumbers } = req.body;
+    if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
+      return res.json({ registered: [], unregistered: [] });
+    }
+
+    const db = await getDb();
+    const normalizedMap = new Map();
+    phoneNumbers.forEach(p => {
+      const norm = normalizePhoneNumber(p);
+      if (norm) normalizedMap.set(norm, p);
+    });
+
+    const normalizedList = Array.from(normalizedMap.keys());
+    if (normalizedList.length === 0) {
+      return res.json({ registered: [], unregistered: [] });
+    }
+
+    const placeholders = normalizedList.map(() => '?').join(',');
+    const matchedUsers = await db.all(
+      `SELECT id, phone_number, display_name, username, avatar, bio
+       FROM users
+       WHERE phone_number IN (${placeholders}) AND id != ? AND is_suspended = 0`,
+      [...normalizedList, req.user.id]
+    );
+
+    const registeredPhones = new Set(matchedUsers.map(u => u.phone_number));
+    const unregistered = [];
+
+    normalizedList.forEach(norm => {
+      if (!registeredPhones.has(norm)) {
+        unregistered.push({
+          rawPhone: normalizedMap.get(norm),
+          normalizedPhone: norm
+        });
+      }
+    });
+
+    const registered = matchedUsers.map(u => ({
+      id: u.id,
+      displayName: u.display_name,
+      username: u.username,
+      avatar: u.avatar,
+      bio: u.bio,
+      phoneNumber: u.phone_number
+    }));
+
+    return res.json({ registered, unregistered });
+  } catch (err) {
+    console.error('syncContacts error:', err);
+    return res.status(500).json({ error: 'Failed to sync contacts' });
   }
 }
 

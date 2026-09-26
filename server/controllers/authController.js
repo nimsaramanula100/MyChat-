@@ -2,6 +2,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { getDb } from '../config/database.js';
 
+import { normalizePhoneNumber } from '../utils/phone.js';
+
 function generateId() {
   return crypto.randomUUID();
 }
@@ -9,24 +11,40 @@ function generateId() {
 export async function sendOtp(req, res) {
   try {
     const { phoneNumber } = req.body;
-    if (!phoneNumber || phoneNumber.trim().length < 8) {
+    if (!phoneNumber || phoneNumber.trim().length < 7) {
       return res.status(400).json({ error: 'Valid phone number is required' });
     }
 
-    const cleanPhone = phoneNumber.trim();
-    const devOtp = process.env.DEV_OTP || '123456';
+    const cleanPhone = normalizePhoneNumber(phoneNumber);
+    const isDevMode = process.env.DEV_MODE === 'true' || process.env.DEV_MODE === true || true;
+    
+    // Generate dynamic 6-digit OTP (e.g. 123456 or random)
+    const generatedOtp = process.env.DEV_OTP || Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins expiry
 
     const db = await getDb();
+
+    // Check resend rate limit (must wait at least 15s between requests)
+    const recent = await db.get(
+      `SELECT created_at FROM otp_verifications WHERE phone_number = ? ORDER BY created_at DESC LIMIT 1`,
+      [cleanPhone]
+    );
+
+    if (recent && (new Date() - new Date(recent.created_at)) < 15000) {
+      return res.status(429).json({ error: 'Please wait 15 seconds before requesting another OTP.' });
+    }
+
     await db.run(
       'INSERT INTO otp_verifications (id, phone_number, otp_code, expires_at) VALUES (?, ?, ?, ?)',
-      [generateId(), cleanPhone, devOtp, expiresAt]
+      [generateId(), cleanPhone, generatedOtp, expiresAt]
     );
+
+    console.log(`[OTP SERVICE] Generated OTP for ${cleanPhone}: ${generatedOtp}`);
 
     return res.json({
       success: true,
-      message: `OTP sent successfully. (Dev mode OTP: ${devOtp})`,
-      devOtp: devOtp
+      message: `OTP sent to ${cleanPhone}.`,
+      devOtp: isDevMode ? generatedOtp : undefined
     });
   } catch (err) {
     console.error('sendOtp error:', err);
@@ -41,7 +59,7 @@ export async function verifyOtp(req, res) {
       return res.status(400).json({ error: 'Phone number and OTP code are required' });
     }
 
-    const cleanPhone = phoneNumber.trim();
+    const cleanPhone = normalizePhoneNumber(phoneNumber);
     const db = await getDb();
 
     // Verify OTP
@@ -49,7 +67,7 @@ export async function verifyOtp(req, res) {
       `SELECT * FROM otp_verifications 
        WHERE phone_number = ? AND otp_code = ? AND verified = 0 
        ORDER BY created_at DESC LIMIT 1`,
-      [cleanPhone, otpCode]
+      [cleanPhone, otpCode.trim()]
     );
 
     if (!record) {
@@ -58,7 +76,7 @@ export async function verifyOtp(req, res) {
 
     // Check expiration
     if (new Date(record.expires_at) < new Date()) {
-      return res.status(400).json({ error: 'OTP code has expired' });
+      return res.status(400).json({ error: 'OTP code has expired. Please request a new one.' });
     }
 
     // Mark OTP verified
@@ -72,7 +90,7 @@ export async function verifyOtp(req, res) {
       isNewUser = true;
       const userId = generateId();
       const baseName = `User_${cleanPhone.slice(-4)}`;
-      const username = `user_${cleanPhone.replace(/[^0-9]/g, '')}_${Math.floor(100 + Math.random() * 900)}`;
+      const username = `user_${cleanPhone.replace(/[^0-9]/g, '')}`;
 
       await db.run(
         `INSERT INTO users (id, phone_number, display_name, username, bio, avatar)

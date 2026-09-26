@@ -206,6 +206,14 @@ export async function getDb() {
       FOREIGN KEY (reporter_id) REFERENCES users (id) ON DELETE CASCADE,
       FOREIGN KEY (reported_user_id) REFERENCES users (id) ON DELETE CASCADE
     );
+
+    -- Create Indexes for fast query execution
+    CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone_number);
+    CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+    CREATE INDEX IF NOT EXISTS idx_chat_members_user ON chat_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_members_room ON chat_members(room_id);
+    CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts(user_id);
   `);
 
   return dbInstance;

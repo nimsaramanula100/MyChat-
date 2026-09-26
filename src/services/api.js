@@ -50,7 +50,8 @@ export const api = {
   getNearbyPeople: () => request('/users/nearby'),
   searchUsers: (query) => request(`/users/search?query=${encodeURIComponent(query)}`),
   getContacts: () => request('/users/contacts'),
-  addContact: (contactUserId, alias) => request('/users/contacts', { method: 'POST', body: { contactUserId, alias } }),
+  addContact: (contactUserId, alias, phoneNumber) => request('/users/contacts', { method: 'POST', body: { contactUserId, alias, phoneNumber } }),
+  syncContacts: (phoneNumbers) => request('/users/contacts/sync', { method: 'POST', body: { phoneNumbers } }),
   deleteAccount: () => request('/users/me', { method: 'DELETE' }),
 
   // Chats & Messages
