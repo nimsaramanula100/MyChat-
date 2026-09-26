@@ -51,7 +51,7 @@ app.use('/api/admin', adminRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', serverTime: new Date().toISOString(), app: 'NovaChat Realtime Server' });
+  res.json({ status: 'ok', serverTime: new Date().toISOString(), app: 'MyChat Realtime Server' });
 });
 
 // Setup Socket.IO
@@ -72,7 +72,7 @@ async function startServer() {
 
     server.listen(PORT, () => {
       console.log(`===================================================`);
-      console.log(`🚀 NovaChat Backend Server running on port ${PORT}`);
+      console.log(`🚀 MyChat Backend Server running on port ${PORT}`);
       console.log(`📡 WebSocket ready at ws://localhost:${PORT}`);
       console.log(`📂 Uploads directory served at http://localhost:${PORT}/uploads`);
       console.log(`===================================================`);

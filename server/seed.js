@@ -141,7 +141,7 @@ export async function seedDatabase() {
   );
   await db.run(
     `INSERT INTO messages (id, room_id, sender_id, type, content, created_at)
-     VALUES (?, ?, ?, 'text', 'Welcome everyone! We are launching NovaChat today.', DATETIME('now', '-1 hour'))`,
+     VALUES (?, ?, ?, 'text', 'Welcome everyone! We are launching MyChat today.', DATETIME('now', '-1 hour'))`,
     [generateId(), roomGroup, alexId]
   );
 

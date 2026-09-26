@@ -4,8 +4,8 @@
     <div v-if="authStore.isAppLocked" class="lock-overlay">
       <div class="lock-card">
         <div class="lock-icon">🔒</div>
-        <h2>NovaChat Security Lock</h2>
-        <p>Enter your 4-digit PIN to unlock NovaChat</p>
+        <h2>MyChat Security Lock</h2>
+        <p>Enter your 4-digit PIN to unlock MyChat</p>
         <div class="pin-input-group">
           <input 
             type="password" 
@@ -27,7 +27,7 @@
         <div class="auth-header">
           <div class="auth-logo">
             <span class="logo-icon">⚡</span>
-            <span class="logo-text">NovaChat</span>
+            <span class="logo-text">MyChat</span>
           </div>
           <p class="auth-subtitle">Real-time messaging platform inspired by Telegram & WhatsApp</p>
         </div>
@@ -118,7 +118,7 @@
         <div class="nav-header">
           <div class="nav-brand">
             <span class="brand-logo">⚡</span>
-            <span class="brand-name">NovaChat</span>
+            <span class="brand-name">MyChat</span>
           </div>
           <div class="user-status-avatar" @click="showSettingsModal = true">
             <img :src="authStore.user?.avatar" class="avatar-sm" />
@@ -301,7 +301,7 @@
         <div v-if="!chatStore.activeChatId" class="no-active-chat">
           <div class="welcome-banner">
             <span class="banner-hero-icon">⚡</span>
-            <h2>Welcome to NovaChat</h2>
+            <h2>Welcome to MyChat</h2>
             <p>Select a conversation from the sidebar or find nearby people to start messaging in real time.</p>
           </div>
         </div>

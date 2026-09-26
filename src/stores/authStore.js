@@ -4,11 +4,11 @@ import { initSocket, disconnectSocket } from '../services/socket.js';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    token: localStorage.getItem('novachat_token') || null,
+    token: localStorage.getItem('mychat_token') || null,
     user: null,
     privacy: null,
     security: null,
-    isAuthenticated: Boolean(localStorage.getItem('novachat_token')),
+    isAuthenticated: Boolean(localStorage.getItem('mychat_token')),
     isLoading: false,
     otpSent: false,
     phoneNumber: '',
@@ -39,7 +39,7 @@ export const useAuthStore = defineStore('auth', {
         this.token = res.token;
         this.user = res.user;
         this.isAuthenticated = true;
-        localStorage.setItem('novachat_token', res.token);
+        localStorage.setItem('mychat_token', res.token);
 
         // Initialize WebSocket connection
         initSocket(res.token);
@@ -103,7 +103,7 @@ export const useAuthStore = defineStore('auth', {
         this.user = null;
         this.isAuthenticated = false;
         this.otpSent = false;
-        localStorage.removeItem('novachat_token');
+        localStorage.removeItem('mychat_token');
         disconnectSocket();
       }
     },

@@ -1,7 +1,7 @@
 const API_BASE_URL = 'http://localhost:5000/api';
 
 function getAuthHeader() {
-  const token = localStorage.getItem('novachat_token');
+  const token = localStorage.getItem('mychat_token') || localStorage.getItem('novachat_token');
   return token ? { 'Authorization': `Bearer ${token}` } : {};
 }
 

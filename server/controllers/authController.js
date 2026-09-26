@@ -77,7 +77,7 @@ export async function verifyOtp(req, res) {
       await db.run(
         `INSERT INTO users (id, phone_number, display_name, username, bio, avatar)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [userId, cleanPhone, baseName, username, 'Hey there! I am using NovaChat.', `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`]
+        [userId, cleanPhone, baseName, username, 'Hey there! I am using MyChat.', `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`]
       );
 
       user = await db.get('SELECT * FROM users WHERE id = ?', [userId]);
