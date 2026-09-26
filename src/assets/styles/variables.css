@@ -49,35 +49,37 @@
   --radius-full: 9999px;
 }
 
-/* Dark Theme (Default) */
-body.dark-theme {
-  --bg-app: #0b0f19;
-  --bg-sidebar: #111827;
-  --bg-chat: #0f172a;
-  --bg-card: #1e293b;
-  --bg-input: #1e293b;
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-active: rgba(99, 102, 241, 0.18);
-  --bg-glass: rgba(17, 24, 39, 0.75);
-  --bg-glass-card: rgba(30, 41, 59, 0.7);
+/* Sky Blue & Fresco Theme */
+body.dark-theme, :root {
+  --bg-app: #0369a1; /* Sky Blue */
+  --bg-sidebar: #0284c7; /* Deep Sky Blue Sidebar */
+  --bg-chat: #c9e2ff; /* Fresco Chat Background */
+  --bg-card: #075985;
+  --bg-input: #404040; /* Dark Gray Typing Space */
+  --bg-hover: rgba(255, 255, 255, 0.12);
+  --bg-active: rgba(43, 53, 175, 0.35);
+  --bg-glass: rgba(3, 105, 161, 0.85);
+  --bg-glass-card: rgba(7, 89, 133, 0.85);
 
-  --border-color: rgba(255, 255, 255, 0.08);
-  --border-focus: rgba(99, 102, 241, 0.6);
+  --border-color: rgba(255, 255, 255, 0.18);
+  --border-focus: #2B35AF;
 
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --text-subtle: #64748b;
-  --text-inverse: #0f172a;
+  --text-main: #ffffff; /* White Letter Character */
+  --text-muted: #e0f2fe;
+  --text-subtle: #bae6fd;
+  --text-inverse: #0369a1;
 
-  --msg-sent-bg: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  --primary-500: #2B35AF; /* Send Button Accent */
+  --primary-600: #21298c;
+  --msg-sent-bg: #2B35AF; /* Royal Blue Send Message */
   --msg-sent-text: #ffffff;
-  --msg-recv-bg: #1e293b;
-  --msg-recv-text: #f1f5f9;
+  --msg-recv-bg: #ffffff;
+  --msg-recv-text: #0f172a;
 
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.3);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.3);
+  --shadow-glow: 0 0 20px rgba(43, 53, 175, 0.4);
 }
 
 /* Light Theme */

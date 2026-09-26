@@ -800,8 +800,8 @@ function playVoiceAudio(url) {
   display: flex;
   width: 100vw;
   height: 100vh;
-  background-color: #0f172a;
-  color: #f8fafc;
+  background-color: #0369a1; /* Sky Blue App Background */
+  color: #ffffff; /* White Letter Characters */
   font-family: 'Inter', system-ui, sans-serif;
   overflow: hidden;
 }
@@ -813,18 +813,18 @@ function playVoiceAudio(url) {
   align-items: center;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle at top right, #1e1b4b, #0f172a);
+  background: radial-gradient(circle at top right, #0284c7, #0369a1);
 }
 
 .auth-card {
   width: 440px;
   max-width: 90%;
   padding: 2.5rem;
-  background: rgba(30, 41, 59, 0.85);
+  background: rgba(7, 89, 133, 0.9);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 1.5rem;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
 }
 
 .auth-header {
@@ -834,22 +834,18 @@ function playVoiceAudio(url) {
 
 .logo-icon {
   font-size: 2.5rem;
-  background: linear-gradient(135deg, #6366f1, #a855f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff;
 }
 
 .logo-text {
   font-size: 2rem;
   font-weight: 800;
   margin-left: 0.5rem;
-  background: linear-gradient(135deg, #6366f1, #ec4899);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff;
 }
 
 .auth-subtitle {
-  color: #94a3b8;
+  color: #e0f2fe;
   font-size: 0.9rem;
   margin-top: 0.5rem;
 }
@@ -860,26 +856,26 @@ function playVoiceAudio(url) {
 }
 
 .country-select {
-  background: #0f172a;
-  color: #fff;
-  border: 1px solid #334155;
+  background: #404040;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 0.75rem;
   padding: 0.75rem;
 }
 
 .phone-input, .otp-input {
   width: 100%;
-  background: #0f172a;
-  color: #fff;
-  border: 1px solid #334155;
+  background: #404040; /* #404040 gray input space */
+  color: #ffffff; /* White text */
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 0.75rem;
   padding: 0.75rem 1rem;
   font-size: 1.1rem;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  color: white;
+  background: #2B35AF; /* #2B35AF Send/Primary Button */
+  color: #ffffff;
   border: none;
   padding: 0.85rem 1.5rem;
   border-radius: 0.75rem;
@@ -890,7 +886,8 @@ function playVoiceAudio(url) {
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+  background: #1f278d;
+  box-shadow: 0 4px 12px rgba(43, 53, 175, 0.4);
 }
 
 .btn-block { width: 100%; }
@@ -904,14 +901,14 @@ function playVoiceAudio(url) {
   display: flex;
   align-items: center;
   margin: 1.5rem 0;
-  color: #64748b;
+  color: #e0f2fe;
   font-size: 0.75rem;
 }
 
 .dev-divider::before, .dev-divider::after {
   content: '';
   flex: 1;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .seed-users-grid {
@@ -925,16 +922,16 @@ function playVoiceAudio(url) {
   align-items: center;
   gap: 0.75rem;
   padding: 0.6rem 1rem;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid #334155;
+  background: rgba(3, 105, 161, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 0.75rem;
-  color: #f8fafc;
+  color: #ffffff;
   cursor: pointer;
   transition: background 0.2s;
 }
 
 .seed-user-btn:hover {
-  background: #334155;
+  background: #0284c7;
 }
 
 .seed-avatar {
@@ -953,8 +950,8 @@ function playVoiceAudio(url) {
 
 .sidebar-nav {
   width: 360px;
-  background: #1e293b;
-  border-right: 1px solid #334155;
+  background: #0284c7; /* Sky Blue Sidebar */
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
   display: flex;
   flex-direction: column;
 }
@@ -964,7 +961,7 @@ function playVoiceAudio(url) {
   justify-content: space-between;
   align-items: center;
   padding: 1.2rem;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .nav-brand {
@@ -973,14 +970,15 @@ function playVoiceAudio(url) {
   gap: 0.5rem;
   font-weight: 700;
   font-size: 1.3rem;
+  color: #ffffff;
 }
 
 .section-tabs {
   display: flex;
-  background: #0f172a;
+  background: #0369a1;
   padding: 0.5rem;
   gap: 0.25rem;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .tab-btn {
@@ -992,15 +990,15 @@ function playVoiceAudio(url) {
   padding: 0.6rem 0.4rem;
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: #e0f2fe;
   border-radius: 0.5rem;
   font-size: 0.85rem;
   cursor: pointer;
 }
 
 .tab-btn.active {
-  background: #334155;
-  color: #fff;
+  background: #2B35AF;
+  color: #ffffff;
   font-weight: 600;
 }
 
@@ -1016,21 +1014,23 @@ function playVoiceAudio(url) {
   align-items: center;
   padding: 0.75rem 1rem;
   gap: 0.5rem;
-  background: #0f172a;
-  border-bottom: 1px solid #334155;
+  background: #0369a1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .search-input {
   flex: 1;
-  background: transparent;
+  background: #404040; /* Gray search bar input */
   border: none;
-  color: #fff;
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  color: #ffffff;
   outline: none;
 }
 
 .btn-icon-add {
-  background: #6366f1;
-  color: #fff;
+  background: #2B35AF;
+  color: #ffffff;
   border: none;
   border-radius: 50%;
   width: 28px;
@@ -1041,7 +1041,7 @@ function playVoiceAudio(url) {
 .empty-chats-box {
   padding: 3rem 1.5rem;
   text-align: center;
-  color: #94a3b8;
+  color: #ffffff;
 }
 
 .empty-icon {
@@ -1067,13 +1067,13 @@ function playVoiceAudio(url) {
   align-items: center;
   padding: 0.85rem 1rem;
   gap: 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .chat-item:hover, .chat-item.active {
-  background: #334155;
+  background: #075985;
 }
 
 .chat-item-content {
@@ -1090,6 +1090,7 @@ function playVoiceAudio(url) {
 .chat-name {
   font-weight: 600;
   font-size: 0.95rem;
+  color: #ffffff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1097,12 +1098,12 @@ function playVoiceAudio(url) {
 
 .chat-time {
   font-size: 0.75rem;
-  color: #64748b;
+  color: #e0f2fe;
 }
 
 .chat-preview {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: #bae6fd;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1114,7 +1115,7 @@ function playVoiceAudio(url) {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #0f172a;
+  background: #0369a1;
 }
 
 .no-active-chat {
@@ -1122,7 +1123,7 @@ function playVoiceAudio(url) {
   justify-content: center;
   align-items: center;
   height: 100%;
-  color: #64748b;
+  color: #ffffff;
   text-align: center;
 }
 
@@ -1137,8 +1138,9 @@ function playVoiceAudio(url) {
   justify-content: space-between;
   align-items: center;
   padding: 0.85rem 1.5rem;
-  background: #1e293b;
-  border-bottom: 1px solid #334155;
+  background: #0284c7;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
 }
 
 .header-left {
@@ -1147,8 +1149,8 @@ function playVoiceAudio(url) {
   gap: 0.75rem;
 }
 
-.status-online { color: #10b981; font-weight: 500; }
-.status-offline { color: #64748b; }
+.status-online { color: #34d399; font-weight: 500; }
+.status-offline { color: #bae6fd; }
 
 .messages-body {
   flex: 1;
@@ -1159,9 +1161,9 @@ function playVoiceAudio(url) {
   gap: 0.75rem;
 }
 
-.wp-default { background: #0f172a; }
-.wp-dark { background: #020617; }
-.wp-gradient { background: radial-gradient(circle at bottom left, #1e1b4b, #0f172a); }
+.wp-default { background: #c9e2ff; } /* Fresco (#c9e2ff) Chat Background */
+.wp-dark { background: #0284c7; }
+.wp-gradient { background: linear-gradient(135deg, #c9e2ff, #bae6fd); }
 
 .message-bubble-wrapper {
   display: flex;
@@ -1176,13 +1178,14 @@ function playVoiceAudio(url) {
   max-width: 65%;
   padding: 0.75rem 1rem;
   border-radius: 1rem;
-  background: #1e293b;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+  background: #ffffff; /* Received message bubble white */
+  color: #0f172a; /* Dark text inside white bubble */
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .outgoing .message-bubble {
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  color: white;
+  background: #2B35AF; /* #2B35AF for outgoing message bubbles */
+  color: #ffffff; /* White letter characters */
 }
 
 .chat-input-bar {
@@ -1190,29 +1193,39 @@ function playVoiceAudio(url) {
   align-items: center;
   gap: 0.75rem;
   padding: 1rem 1.5rem;
-  background: #1e293b;
-  border-top: 1px solid #334155;
+  background: #0284c7;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .message-textarea {
   flex: 1;
-  background: #0f172a;
-  border: 1px solid #334155;
+  background: #404040; /* #404040 Gray Chat Typing Space */
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 1.5rem;
-  padding: 0.6rem 1.2rem;
-  color: #fff;
+  padding: 0.65rem 1.2rem;
+  color: #ffffff; /* White Letter Character */
   outline: none;
   resize: none;
 }
 
+.message-textarea::placeholder {
+  color: #d4d4d4;
+}
+
 .btn-send {
-  background: linear-gradient(135deg, #6366f1, #a855f7);
-  color: white;
+  background: #2B35AF; /* #2B35AF Send Button */
+  color: #ffffff; /* White text */
   border: none;
-  padding: 0.6rem 1.2rem;
+  padding: 0.65rem 1.4rem;
   border-radius: 1.5rem;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-send:hover {
+  background: #1f278d;
+  box-shadow: 0 4px 12px rgba(43, 53, 175, 0.4);
 }
 
 .view-once-box {
