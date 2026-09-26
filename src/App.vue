@@ -454,6 +454,11 @@
     <!-- New Chat / Add Contact Modal (Section 7, 30) -->
     <div v-if="showNewChatModal" class="modal-overlay">
       <div class="modal-card">
+        <div class="modal-top-nav">
+          <button @click="showNewChatModal = false" class="btn-modal-back">
+            ← Back
+          </button>
+        </div>
         <div class="modal-header">
           <h3>➕ Start New Chat / Add Contact</h3>
           <button @click="showNewChatModal = false" class="btn-close">✕</button>
@@ -1268,4 +1273,33 @@ function playVoiceAudio(url) {
 
 .result-msg.success { color: #10b981; }
 .result-msg.error { color: #ef4444; }
+
+.modal-top-nav {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.btn-modal-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-modal-back:hover {
+  background: rgba(99, 102, 241, 0.25);
+  color: #ffffff;
+  border-color: #6366f1;
+  transform: translateX(-3px);
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.35);
+}
 </style>
