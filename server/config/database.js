@@ -1,28 +1,67 @@
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import pkg from 'pg';
+const { Pool } = pkg;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
 
-let dbInstance = null;
+pool.on('connect', () => {
+  console.log('Connected to PostgreSQL database!');
+});
 
-export async function getDb() {
-  if (dbInstance) return dbInstance;
+// Helper to convert SQLite '?' to PostgreSQL '$1, $2'
+const convertQuery = (sql) => {
+  let i = 1;
+  return sql.replace(/\?/g, () => `$${i++}`);
+};
 
-  const dbPath = path.resolve(__dirname, '../../chat_app.db');
-  
-  dbInstance = await open({
-    filename: dbPath,
-    driver: sqlite3.Database
-  });
+const dbWrapper = {
+  get: async (sql, params = []) => {
+    try {
+        const res = await pool.query(convertQuery(sql), params);
+        return res.rows[0];
+    } catch(err) {
+        console.error("DB GET Error:", err, sql, params);
+        throw err;
+    }
+  },
+  all: async (sql, params = []) => {
+    try {
+        const res = await pool.query(convertQuery(sql), params);
+        return res.rows;
+    } catch(err) {
+        console.error("DB ALL Error:", err, sql, params);
+        throw err;
+    }
+  },
+  run: async (sql, params = []) => {
+    try {
+        const res = await pool.query(convertQuery(sql), params);
+        return { lastID: null, changes: res.rowCount };
+    } catch(err) {
+        console.error("DB RUN Error:", err, sql, params);
+        throw err;
+    }
+  },
+  exec: async (sql) => {
+    try {
+        await pool.query(sql);
+    } catch(err) {
+        console.error("DB EXEC Error:", err, sql);
+        throw err;
+    }
+  }
+};
 
-  // Enable foreign keys
-  await dbInstance.run('PRAGMA foreign_keys = ON');
+export const getDb = async () => {
+  return dbWrapper;
+};
 
-  // Initialize Schema
-  await dbInstance.exec(`
+export const initDb = async () => {
+  const schemaQuery = `
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       phone_number TEXT UNIQUE NOT NULL,
@@ -32,8 +71,8 @@ export async function getDb() {
       avatar TEXT DEFAULT '',
       is_admin INTEGER DEFAULT 0,
       is_suspended INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
@@ -43,8 +82,8 @@ export async function getDb() {
       platform TEXT NOT NULL,
       ip_address TEXT DEFAULT '',
       token TEXT UNIQUE NOT NULL,
-      last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     );
 
@@ -52,9 +91,9 @@ export async function getDb() {
       id TEXT PRIMARY KEY,
       phone_number TEXT NOT NULL,
       otp_code TEXT NOT NULL,
-      expires_at DATETIME NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
       verified INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS contacts (
@@ -62,7 +101,7 @@ export async function getDb() {
       user_id TEXT NOT NULL,
       contact_id TEXT NOT NULL,
       alias TEXT DEFAULT '',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
       FOREIGN KEY (contact_id) REFERENCES users (id) ON DELETE CASCADE,
       UNIQUE(user_id, contact_id)
@@ -72,7 +111,7 @@ export async function getDb() {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       blocked_user_id TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
       FOREIGN KEY (blocked_user_id) REFERENCES users (id) ON DELETE CASCADE,
       UNIQUE(user_id, blocked_user_id)
@@ -85,7 +124,7 @@ export async function getDb() {
       avatar TEXT DEFAULT '',
       description TEXT DEFAULT '',
       created_by TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS chat_members (
@@ -93,7 +132,7 @@ export async function getDb() {
       room_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       role TEXT DEFAULT 'member',
-      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       is_pinned INTEGER DEFAULT 0,
       is_muted INTEGER DEFAULT 0,
       is_hidden INTEGER DEFAULT 0,
@@ -118,7 +157,7 @@ export async function getDb() {
       is_view_once INTEGER DEFAULT 0,
       is_consumed INTEGER DEFAULT 0,
       is_edited INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (room_id) REFERENCES chat_rooms (id) ON DELETE CASCADE,
       FOREIGN KEY (sender_id) REFERENCES users (id) ON DELETE CASCADE
     );
@@ -128,7 +167,7 @@ export async function getDb() {
       message_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       emoji TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
       UNIQUE(message_id, user_id, emoji)
@@ -138,7 +177,7 @@ export async function getDb() {
       id TEXT PRIMARY KEY,
       message_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
-      read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
       UNIQUE(message_id, user_id)
@@ -149,7 +188,7 @@ export async function getDb() {
       user_id TEXT NOT NULL,
       room_id TEXT NOT NULL,
       pin_hash TEXT NOT NULL,
-      hidden_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      hidden_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
       FOREIGN KEY (room_id) REFERENCES chat_rooms (id) ON DELETE CASCADE,
       UNIQUE(user_id, room_id)
@@ -160,7 +199,7 @@ export async function getDb() {
       user_id TEXT NOT NULL,
       room_id TEXT NOT NULL,
       pin_hash TEXT NOT NULL,
-      locked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
       FOREIGN KEY (room_id) REFERENCES chat_rooms (id) ON DELETE CASCADE,
       UNIQUE(user_id, room_id)
@@ -191,7 +230,7 @@ export async function getDb() {
       latitude REAL NOT NULL,
       longitude REAL NOT NULL,
       approx_location_name TEXT DEFAULT '',
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     );
 
@@ -202,19 +241,25 @@ export async function getDb() {
       category TEXT NOT NULL,
       description TEXT DEFAULT '',
       status TEXT DEFAULT 'pending',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (reporter_id) REFERENCES users (id) ON DELETE CASCADE,
       FOREIGN KEY (reported_user_id) REFERENCES users (id) ON DELETE CASCADE
     );
 
-    -- Create Indexes for fast query execution
     CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone_number);
     CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id);
     CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_chat_members_user ON chat_members(user_id);
     CREATE INDEX IF NOT EXISTS idx_chat_members_room ON chat_members(room_id);
     CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts(user_id);
-  `);
+  \`;
 
-  return dbInstance;
-}
+  try {
+    await pool.query(schemaQuery);
+    console.log('PostgreSQL tables created successfully!');
+  } catch (error) {
+    console.error('Error creating tables:', error);
+  }
+};
+
+export default pool;

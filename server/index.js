@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { getDb } from './config/database.js';
+import { getDb, initDb } from './config/database.js';
 import { seedDatabase } from './seed.js';
 
 import authRoutes from './routes/authRoutes.js';
@@ -30,7 +30,7 @@ const PORT = process.env.PORT || 5000;
 
 // CORS setup
 app.use(cors({
-  origin: '*',
+  origin: true,
   credentials: true
 }));
 
@@ -57,8 +57,9 @@ app.get('/api/health', (req, res) => {
 // Setup Socket.IO
 const io = new SocketIOServer(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+    origin: true,
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
@@ -69,6 +70,7 @@ setupSocket(io);
 async function startServer() {
   try {
     await getDb();
+    await initDb();
     await seedDatabase();
 
     server.listen(PORT, () => {
