@@ -26,8 +26,11 @@
       <div class="auth-card">
         <div class="auth-header">
           <div class="auth-logo">
-            <span class="logo-icon">⚡</span>
             <span class="logo-text">MyChat</span>
+            <span class="speech-bubble" aria-label="Hi!">
+              <MessageCircle :size="38" :stroke-width="1.8" aria-hidden="true" />
+              <span>Hi !</span>
+            </span>
           </div>
           <p class="auth-subtitle">Real-time messaging platform inspired by Telegram & WhatsApp</p>
         </div>
@@ -658,6 +661,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { MessageCircle } from 'lucide-vue-next';
 import { useAuthStore } from './stores/authStore.js';
 import { useChatStore } from './stores/chatStore.js';
 import { usePeopleStore } from './stores/peopleStore.js';
@@ -1124,20 +1128,93 @@ function playVoiceAudio(url) {
   margin-bottom: 2rem;
 }
 
-.logo-icon {
-  font-size: 2.5rem;
-  background: linear-gradient(135deg, #6366f1, #a855f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+.auth-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
 }
 
 .logo-text {
   font-size: 2rem;
   font-weight: 800;
-  margin-left: 0.5rem;
-  background: linear-gradient(135deg, #6366f1, #ec4899);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff;
+}
+
+.speech-bubble {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  color: #111827;
+  flex: 0 0 auto;
+}
+
+.speech-bubble svg {
+  position: absolute;
+  inset: 0;
+  fill: #fef08a;
+}
+
+.speech-bubble span {
+  position: relative;
+  z-index: 1;
+  color: #000000;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.auth-input {
+  display: block;
+  width: 100%;
+  min-height: 50px;
+  box-sizing: border-box;
+  padding: 13px 15px;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 10px;
+  outline: none;
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+  font: inherit;
+  font-size: 0.98rem;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.auth-input::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.auth-input:hover {
+  border-color: rgba(148, 163, 184, 0.7);
+}
+
+.auth-input:focus-visible {
+  border-color: #a5b4fc;
+  background: rgba(15, 23, 42, 0.95);
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.24);
+}
+
+.auth-step .form-group {
+  margin-bottom: 14px;
+}
+
+.auth-step .form-group.mb-4 {
+  margin-bottom: 18px;
+}
+
+@media (max-width: 480px) {
+  .auth-card {
+    padding: 1.5rem;
+  }
+
+  .auth-input {
+    min-height: 52px;
+    padding: 14px;
+  }
 }
 
 .auth-subtitle {
