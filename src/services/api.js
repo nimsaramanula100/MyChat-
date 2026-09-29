@@ -1,4 +1,4 @@
-const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const SERVER_URL = import.meta.env.VITE_API_URL || 'https://mychat-5tp1.onrender.com';
 const API_BASE_URL = `${SERVER_URL}/api`;
 
 function getAuthHeader() {

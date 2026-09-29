@@ -8,7 +8,7 @@ export function initSocket(token) {
     socket.disconnect();
   }
 
-  const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const socketUrl = import.meta.env.VITE_API_URL || 'https://mychat-5tp1.onrender.com';
   socket = io(socketUrl, {
     auth: { token },
     transports: ['websocket', 'polling']
