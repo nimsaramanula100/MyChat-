@@ -32,63 +32,38 @@
           <p class="auth-subtitle">Real-time messaging platform inspired by Telegram & WhatsApp</p>
         </div>
 
-        <!-- Step 1: Phone Entry -->
-        <div v-if="!authStore.otpSent" class="auth-step">
-          <h3 class="step-title">Sign in with Mobile Number</h3>
-          <p class="step-desc">Select country code and enter your mobile phone number.</p>
-          
-          <div class="form-group phone-group">
-            <select v-model="countryCode" class="country-select">
-              <option value="+94">🇱🇰 Sri Lanka (+94)</option>
-              <option value="+1">🇺🇸 USA (+1)</option>
-              <option value="+44">🇬🇧 UK (+44)</option>
-              <option value="+91">🇮🇳 India (+91)</option>
-              <option value="+81">🇯🇵 Japan (+81)</option>
-              <option value="+49">🇩🇪 Germany (+49)</option>
-            </select>
-            <input 
-              type="tel" 
-              v-model="phoneInput" 
-              placeholder="77 123 4567" 
-              class="phone-input"
-              @keyup.enter="handleSendOtp"
-            />
+        <!-- Auth Forms -->
+        <div class="auth-step">
+          <h3 class="step-title">{{ authMode === 'login' ? 'Sign In' : 'Create Account' }}</h3>
+          <p class="step-desc">{{ authMode === 'login' ? 'Welcome back! Please enter your details.' : 'Join MyChat today!' }}</p>
+
+          <form @submit.prevent="authMode === 'login' ? handleLogin() : handleRegister()">
+            <div v-if="authMode === 'register'" class="form-group mb-3">
+              <input type="text" v-model="authDisplayName" placeholder="Display Name" required class="auth-input" />
+            </div>
+
+            <div class="form-group mb-3">
+              <input type="email" v-model="authEmail" placeholder="Email Address" required class="auth-input" />
+            </div>
+
+            <div class="form-group mb-4">
+              <input type="password" v-model="authPassword" placeholder="Password" required class="auth-input" />
+            </div>
+
+            <button type="submit" :disabled="authStore.isLoading" class="btn-primary btn-block">
+              <span v-if="authStore.isLoading">Please wait...</span>
+              <span v-else>{{ authMode === 'login' ? 'Sign In' : 'Sign Up' }}</span>
+            </button>
+          </form>
+
+          <div class="auth-toggle mt-3 text-center">
+            <span v-if="authMode === 'login'">
+              Don't have an account? <button @click="authMode = 'register'" class="btn-link">Sign Up</button>
+            </span>
+            <span v-else>
+              Already have an account? <button @click="authMode = 'login'" class="btn-link">Sign In</button>
+            </span>
           </div>
-
-          <button @click="handleSendOtp" :disabled="authStore.isLoading" class="btn-primary btn-block">
-            <span v-if="authStore.isLoading">Sending OTP...</span>
-            <span v-else>Continue & Send OTP</span>
-          </button>
-
-        </div>
-
-        <!-- Step 2: OTP Verification -->
-        <div v-else class="auth-step">
-          <h3 class="step-title">Verify OTP Code</h3>
-          <p class="step-desc">Enter 6-digit OTP code sent to <strong>{{ authStore.phoneNumber }}</strong></p>
-
-          <div class="dev-otp-badge">
-            ⚡ Dev Mode OTP: <strong>{{ authStore.devOtpCode }}</strong>
-            <button @click="otpInput = authStore.devOtpCode" class="btn-link">Auto-fill</button>
-          </div>
-
-          <div class="form-group">
-            <input 
-              type="text" 
-              v-model="otpInput" 
-              maxlength="6" 
-              placeholder="123456" 
-              class="otp-input"
-              @keyup.enter="handleVerifyOtp"
-            />
-          </div>
-
-          <button @click="handleVerifyOtp" :disabled="authStore.isLoading" class="btn-primary btn-block">
-            <span v-if="authStore.isLoading">Verifying...</span>
-            <span v-else>Verify & Enter</span>
-          </button>
-
-          <button @click="authStore.otpSent = false" class="btn-secondary btn-block mt-2">Back to Phone Input</button>
         </div>
       </div>
     </div>
@@ -566,18 +541,18 @@
         </div>
         <div class="modal-body">
           <div class="tab-sub-bar">
-            <button :class="['tab-sub', { active: newChatTab === 'phone' }]" @click="newChatTab = 'phone'">By Phone Number</button>
+            <button :class="['tab-sub', { active: newChatTab === 'email' }]" @click="newChatTab = 'email'">By Email</button>
             <button :class="['tab-sub', { active: newChatTab === 'user' }]" @click="newChatTab = 'user'">By Username</button>
             <button class="tab-sub group-tab-btn" @click="showNewChatModal = false; showCreateGroupModal = true;">👥 Create Group</button>
           </div>
 
-          <!-- Search by Phone Number -->
-          <div v-if="newChatTab === 'phone'" class="new-chat-section mt-3">
-            <label class="input-label">Enter Mobile Phone Number:</label>
-            <input type="tel" v-model="manualPhoneInput" placeholder="+94712345678" class="phone-input" />
-            <button @click="handleAddContactByPhone" class="btn-primary btn-block mt-2">Search & Add Contact</button>
-            <p v-if="phoneAddResult" :class="['result-msg', phoneAddResult.registered ? 'success' : 'error']">
-              {{ phoneAddResult.message }}
+          <!-- Search by Email -->
+          <div v-if="newChatTab === 'email'" class="new-chat-section mt-3">
+            <label class="input-label">Enter Email Address:</label>
+            <input type="email" v-model="manualEmailInput" placeholder="user@example.com" class="email-input" />
+            <button @click="handleAddContactByEmail" class="btn-primary btn-block mt-2">Search & Add Contact</button>
+            <p v-if="emailAddResult" :class="['result-msg', emailAddResult.registered ? 'success' : 'error']">
+              {{ emailAddResult.message }}
             </p>
           </div>
 
@@ -703,9 +678,10 @@ const adminStore = useAdminStore();
 
 const activeTab = ref('chat');
 const isMobile = ref(window.innerWidth < 768);
-const countryCode = ref('+94');
-const phoneInput = ref('');
-const otpInput = ref('');
+const authMode = ref('login');
+const authEmail = ref('');
+const authPassword = ref('');
+const authDisplayName = ref('');
 const searchQuery = ref('');
 const messageInput = ref('');
 const isViewOnceMode = ref(false);
@@ -721,9 +697,9 @@ const settingsInitialPage = ref('main');
 const showNewChatModal = ref(false);
 const showGroupInfoModal = ref(false);
 const showCreateGroupModal = ref(false);
-const newChatTab = ref('phone');
-const manualPhoneInput = ref('');
-const phoneAddResult = ref(null);
+const newChatTab = ref('email');
+const manualEmailInput = ref('');
+const emailAddResult = ref(null);
 const userSearchQuery = ref('');
 
 const showAttachmentMenu = ref(false);
@@ -921,21 +897,24 @@ function handleGlobalKeydown(e) {
   }
 }
 
-async function handleSendOtp() {
-  if (!phoneInput.value) return;
-  const fullPhone = `${countryCode.value}${phoneInput.value.replace(/\s+/g, '')}`;
-  await authStore.requestOtp(fullPhone);
+async function handleLogin() {
+  if (!authEmail.value || !authPassword.value) return;
+  try {
+    await authStore.login(authEmail.value, authPassword.value);
+    await chatStore.fetchChats();
+  } catch (err) {
+    alert(err.response?.data?.error || err.message || 'Login failed');
+  }
 }
 
-async function quickLoginSeedUser(phone) {
-  await authStore.requestOtp(phone);
-  await authStore.verifyOtp(authStore.devOtpCode);
-  await chatStore.fetchChats();
-}
-
-async function handleVerifyOtp() {
-  await authStore.verifyOtp(otpInput.value);
-  await chatStore.fetchChats();
+async function handleRegister() {
+  if (!authEmail.value || !authPassword.value || !authDisplayName.value) return;
+  try {
+    await authStore.register(authEmail.value, authPassword.value, authDisplayName.value);
+    await chatStore.fetchChats();
+  } catch (err) {
+    alert(err.response?.data?.error || err.message || 'Registration failed');
+  }
 }
 
 function switchTab(tab) {

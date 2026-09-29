@@ -1,7 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { User } from '../models/index.js';
 import { calculateHaversineDistance } from '../utils/distance.js';
-import { normalizePhoneNumber } from '../utils/phone.js';
 
 export async function getMe(req, res) {
   try {
@@ -9,7 +8,7 @@ export async function getMe(req, res) {
     return res.json({
       user: {
         id: user._id,
-        phoneNumber: user.phoneNumber,
+        email: user.email,
         displayName: user.displayName,
         username: user.username,
         bio: user.bio,
@@ -53,7 +52,7 @@ export async function updateProfile(req, res) {
       success: true,
       user: {
         id: updatedUser._id,
-        phoneNumber: updatedUser.phoneNumber,
+        email: updatedUser.email,
         displayName: updatedUser.displayName,
         username: updatedUser.username,
         bio: updatedUser.bio,
@@ -70,7 +69,7 @@ export async function updateProfile(req, res) {
 export async function updatePrivacySettings(req, res) {
   try {
     const {
-      phonePrivacy,
+      emailPrivacy,
       lastSeenPrivacy,
       profilePhotoPrivacy,
       onlineStatusPrivacy,
@@ -80,7 +79,7 @@ export async function updatePrivacySettings(req, res) {
     } = req.body;
 
     const privacyUpdate = {};
-    if (phonePrivacy !== undefined) privacyUpdate['privacy.phonePrivacy'] = phonePrivacy;
+    if (emailPrivacy !== undefined) privacyUpdate['privacy.emailPrivacy'] = emailPrivacy;
     if (lastSeenPrivacy !== undefined) privacyUpdate['privacy.lastSeenPrivacy'] = lastSeenPrivacy;
     if (profilePhotoPrivacy !== undefined) privacyUpdate['privacy.profilePhotoPrivacy'] = profilePhotoPrivacy;
     if (onlineStatusPrivacy !== undefined) privacyUpdate['privacy.onlineStatusPrivacy'] = onlineStatusPrivacy;
@@ -183,7 +182,7 @@ export async function searchUsers(req, res) {
 
     const regex = new RegExp(query.trim(), 'i');
     const users = await User.find({
-      $or: [{ username: regex }, { displayName: regex }, { phoneNumber: regex }],
+      $or: [{ username: regex }, { displayName: regex }, { email: regex }],
       _id: { $ne: req.user._id },
       isSuspended: false,
     }).limit(20).lean();
@@ -222,7 +221,7 @@ export async function getContacts(req, res) {
           username: u?.username,
           avatar: u?.avatar,
           bio: u?.bio,
-          phoneNumber: u?.phoneNumber,
+          email: u?.email,
         };
       }),
     });
@@ -234,18 +233,18 @@ export async function getContacts(req, res) {
 export async function addContact(req, res) {
   try {
     const { Contact } = await import('../models/index.js');
-    const { contactUserId, phoneNumber, alias } = req.body;
+    const { contactUserId, email, alias } = req.body;
 
     let targetUser = null;
     if (contactUserId) {
       targetUser = await User.findById(contactUserId).lean();
-    } else if (phoneNumber) {
-      const cleanPhone = normalizePhoneNumber(phoneNumber);
-      targetUser = await User.findOne({ phoneNumber: cleanPhone }).lean();
+    } else if (email) {
+      const cleanEmail = email.trim().toLowerCase();
+      targetUser = await User.findOne({ email: cleanEmail }).lean();
     }
 
     if (!targetUser) {
-      return res.status(404).json({ registered: false, error: 'This number is not registered on MyChat.' });
+      return res.status(404).json({ registered: false, error: 'This user is not registered on MyChat.' });
     }
     if (String(targetUser._id) === String(req.user._id)) {
       return res.status(400).json({ error: 'You cannot add yourself as a contact.' });
@@ -267,7 +266,7 @@ export async function addContact(req, res) {
         username: targetUser.username,
         avatar: targetUser.avatar,
         bio: targetUser.bio,
-        phoneNumber: targetUser.phoneNumber,
+        email: targetUser.email,
       },
     });
   } catch (err) {
@@ -278,22 +277,22 @@ export async function addContact(req, res) {
 
 export async function syncContacts(req, res) {
   try {
-    const { phoneNumbers } = req.body;
-    if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
+    const { emails } = req.body;
+    if (!Array.isArray(emails) || emails.length === 0) {
       return res.json({ registered: [], unregistered: [] });
     }
 
-    const normalizedList = [...new Set(phoneNumbers.map(p => normalizePhoneNumber(p)).filter(Boolean))];
+    const normalizedList = [...new Set(emails.map(e => e.trim().toLowerCase()).filter(Boolean))];
     if (!normalizedList.length) return res.json({ registered: [], unregistered: [] });
 
     const matchedUsers = await User.find({
-      phoneNumber: { $in: normalizedList },
+      email: { $in: normalizedList },
       _id: { $ne: req.user._id },
       isSuspended: false,
     }).lean();
 
-    const registeredPhones = new Set(matchedUsers.map(u => u.phoneNumber));
-    const unregistered = normalizedList.filter(p => !registeredPhones.has(p)).map(p => ({ normalizedPhone: p }));
+    const registeredEmails = new Set(matchedUsers.map(u => u.email));
+    const unregistered = normalizedList.filter(e => !registeredEmails.has(e)).map(e => ({ email: e }));
 
     return res.json({
       registered: matchedUsers.map(u => ({
@@ -302,7 +301,7 @@ export async function syncContacts(req, res) {
         username: u.username,
         avatar: u.avatar,
         bio: u.bio,
-        phoneNumber: u.phoneNumber,
+        email: u.email,
       })),
       unregistered,
     });

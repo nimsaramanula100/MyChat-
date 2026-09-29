@@ -1,90 +1,36 @@
 import jwt from 'jsonwebtoken';
-import { User, OtpVerification, Session } from '../models/index.js';
-import { normalizePhoneNumber } from '../utils/phone.js';
+import bcrypt from 'bcryptjs';
+import { User, Session } from '../models/index.js';
 
-export async function sendOtp(req, res) {
+export async function register(req, res) {
   try {
-    const { phoneNumber } = req.body;
-    if (!phoneNumber || phoneNumber.trim().length < 7) {
-      return res.status(400).json({ error: 'Valid phone number is required' });
+    const { email, password, displayName, deviceName, platform } = req.body;
+    if (!email || !password || !displayName) {
+      return res.status(400).json({ error: 'Email, password, and display name are required' });
     }
 
-    const cleanPhone = normalizePhoneNumber(phoneNumber);
-    const generatedOtp = process.env.DEV_OTP || Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    const cleanEmail = email.trim().toLowerCase();
 
-    // Rate-limit: 15 seconds between OTPs
-    const recent = await OtpVerification
-      .findOne({ phoneNumber: cleanPhone })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    if (recent && (Date.now() - new Date(recent.createdAt).getTime()) < 15000) {
-      return res.status(429).json({ error: 'Please wait 15 seconds before requesting another OTP.' });
+    let existingUser = await User.findOne({ email: cleanEmail }).lean();
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email is already registered' });
     }
 
-    await OtpVerification.create({
-      phoneNumber: cleanPhone,
-      otpCode: generatedOtp,
-      expiresAt,
+    const username = `user_${cleanEmail.split('@')[0]}_${Math.floor(Math.random() * 1000)}`;
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const user = await User.create({
+      email: cleanEmail,
+      passwordHash,
+      displayName: displayName.trim(),
+      username,
+      bio: 'Hey there! I am using MyChat.',
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`,
     });
-
-    console.log(`[OTP SERVICE] Generated OTP for ${cleanPhone}: ${generatedOtp}`);
-
-    return res.json({
-      success: true,
-      message: `OTP sent to ${cleanPhone}.`,
-      devOtp: process.env.DEV_MODE === 'true' ? generatedOtp : undefined,
-    });
-  } catch (err) {
-    console.error('sendOtp error:', err);
-    return res.status(500).json({ error: 'Failed to send OTP' });
-  }
-}
-
-export async function verifyOtp(req, res) {
-  try {
-    const { phoneNumber, otpCode, deviceName, platform } = req.body;
-    if (!phoneNumber || !otpCode) {
-      return res.status(400).json({ error: 'Phone number and OTP code are required' });
-    }
-
-    const cleanPhone = normalizePhoneNumber(phoneNumber);
-
-    const record = await OtpVerification
-      .findOne({ phoneNumber: cleanPhone, otpCode: otpCode.trim(), verified: false })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    if (!record) {
-      return res.status(400).json({ error: 'Invalid or expired OTP code' });
-    }
-
-    if (new Date(record.expiresAt) < new Date()) {
-      return res.status(400).json({ error: 'OTP code has expired. Please request a new one.' });
-    }
-
-    await OtpVerification.findByIdAndUpdate(record._id, { verified: true });
-
-    let user = await User.findOne({ phoneNumber: cleanPhone }).lean();
-    let isNewUser = false;
-
-    if (!user) {
-      isNewUser = true;
-      const username = `user_${cleanPhone.replace(/[^0-9]/g, '')}`;
-      user = await User.create({
-        phoneNumber: cleanPhone,
-        displayName: `User_${cleanPhone.slice(-4)}`,
-        username,
-        bio: 'Hey there! I am using MyChat.',
-        avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`,
-      });
-      user = user.toObject();
-    }
 
     const jwtSecret = process.env.JWT_SECRET || 'super_secret_jwt_token_key_change_in_production_2026';
     const token = jwt.sign(
-      { userId: user._id, phone: user.phoneNumber },
+      { userId: user._id, email: user.email },
       jwtSecret,
       { expiresIn: '30d' }
     );
@@ -100,10 +46,10 @@ export async function verifyOtp(req, res) {
     return res.json({
       success: true,
       token,
-      isNewUser,
+      isNewUser: true,
       user: {
         id: user._id,
-        phoneNumber: user.phoneNumber,
+        email: user.email,
         displayName: user.displayName,
         username: user.username,
         bio: user.bio,
@@ -112,8 +58,66 @@ export async function verifyOtp(req, res) {
       },
     });
   } catch (err) {
-    console.error('verifyOtp error:', err);
-    return res.status(500).json({ error: 'Verification failed' });
+    console.error('register error:', err);
+    return res.status(500).json({ error: 'Registration failed' });
+  }
+}
+
+export async function login(req, res) {
+  try {
+    const { email, password, deviceName, platform } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: cleanEmail }).lean();
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    const isValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    if (user.isSuspended) {
+      return res.status(403).json({ error: 'Account suspended. Contact support.' });
+    }
+
+    const jwtSecret = process.env.JWT_SECRET || 'super_secret_jwt_token_key_change_in_production_2026';
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      jwtSecret,
+      { expiresIn: '30d' }
+    );
+
+    await Session.create({
+      userId: user._id,
+      deviceName: deviceName || 'Web Browser',
+      platform: platform || 'Desktop / Mobile Web',
+      ipAddress: req.ip || '127.0.0.1',
+      token,
+    });
+
+    return res.json({
+      success: true,
+      token,
+      isNewUser: false,
+      user: {
+        id: user._id,
+        email: user.email,
+        displayName: user.displayName,
+        username: user.username,
+        bio: user.bio,
+        avatar: user.avatar,
+        isAdmin: Boolean(user.isAdmin),
+      },
+    });
+  } catch (err) {
+    console.error('login error:', err);
+    return res.status(500).json({ error: 'Login failed' });
   }
 }
 

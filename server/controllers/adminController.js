@@ -20,7 +20,7 @@ export async function getUsersList(req, res) {
     return res.json({
       users: users.map(u => ({
         id: u._id,
-        phoneNumber: u.phoneNumber,
+        email: u.email,
         displayName: u.displayName,
         username: u.username,
         avatar: u.avatar,

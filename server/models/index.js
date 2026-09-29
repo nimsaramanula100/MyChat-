@@ -5,7 +5,8 @@ const { Schema } = mongoose;
 // ─── User ─────────────────────────────────────────────────────────────────────
 const userSchema = new Schema({
   _id: { type: String, default: () => crypto.randomUUID() },
-  phoneNumber: { type: String, unique: true, required: true },
+  email: { type: String, unique: true, required: true },
+  passwordHash: { type: String, required: true },
   displayName: { type: String, required: true },
   username: { type: String, unique: true, required: true },
   bio: { type: String, default: '' },
@@ -13,7 +14,7 @@ const userSchema = new Schema({
   isAdmin: { type: Boolean, default: false },
   isSuspended: { type: Boolean, default: false },
   privacy: {
-    phonePrivacy: { type: String, default: 'contacts' },
+    emailPrivacy: { type: String, default: 'contacts' },
     lastSeenPrivacy: { type: String, default: 'everyone' },
     profilePhotoPrivacy: { type: String, default: 'everyone' },
     onlineStatusPrivacy: { type: String, default: 'everyone' },
@@ -43,15 +44,6 @@ const sessionSchema = new Schema({
   ipAddress: { type: String, default: '' },
   token: { type: String, unique: true, required: true },
   lastActive: { type: Date, default: Date.now },
-}, { timestamps: true });
-
-// ─── OTP Verification ─────────────────────────────────────────────────────────
-const otpVerificationSchema = new Schema({
-  _id: { type: String, default: () => crypto.randomUUID() },
-  phoneNumber: { type: String, required: true },
-  otpCode: { type: String, required: true },
-  expiresAt: { type: Date, required: true },
-  verified: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // ─── Contact ──────────────────────────────────────────────────────────────────
@@ -141,7 +133,6 @@ const reportSchema = new Schema({
 // ─── Exports ──────────────────────────────────────────────────────────────────
 export const User = mongoose.model('User', userSchema);
 export const Session = mongoose.model('Session', sessionSchema);
-export const OtpVerification = mongoose.model('OtpVerification', otpVerificationSchema);
 export const Contact = mongoose.model('Contact', contactSchema);
 export const BlockedUser = mongoose.model('BlockedUser', blockedUserSchema);
 export const ChatRoom = mongoose.model('ChatRoom', chatRoomSchema);

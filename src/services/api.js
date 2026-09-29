@@ -36,8 +36,8 @@ async function request(endpoint, options = {}) {
 
 export const api = {
   // Auth
-  sendOtp: (phoneNumber) => request('/auth/send-otp', { method: 'POST', body: { phoneNumber } }),
-  verifyOtp: (phoneNumber, otpCode, deviceName, platform) => request('/auth/verify-otp', { method: 'POST', body: { phoneNumber, otpCode, deviceName, platform } }),
+  register: (email, password, displayName) => request('/auth/register', { method: 'POST', body: { email, password, displayName } }),
+  login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password } }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   logoutAll: () => request('/auth/logout-all', { method: 'POST' }),
   getDevices: () => request('/auth/devices'),

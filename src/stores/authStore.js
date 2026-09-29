@@ -19,23 +19,30 @@ export const useAuthStore = defineStore('auth', {
   }),
 
   actions: {
-    async requestOtp(phone) {
+    async register(email, password, displayName) {
       this.isLoading = true;
       try {
-        const res = await api.sendOtp(phone);
-        this.phoneNumber = phone;
-        this.otpSent = true;
-        this.devOtpCode = res.devOtp || '123456';
+        const res = await api.register(email, password, displayName);
+        this.token = res.token;
+        this.user = res.user;
+        this.isAuthenticated = true;
+        localStorage.setItem('mychat_token', res.token);
+
+        // Initialize WebSocket connection
+        initSocket(res.token);
+
+        // Fetch full profile and settings
+        await this.fetchMe();
         return res;
       } finally {
         this.isLoading = false;
       }
     },
 
-    async verifyOtp(otpCode) {
+    async login(email, password) {
       this.isLoading = true;
       try {
-        const res = await api.verifyOtp(this.phoneNumber, otpCode, navigator.userAgent, navigator.platform);
+        const res = await api.login(email, password);
         this.token = res.token;
         this.user = res.user;
         this.isAuthenticated = true;

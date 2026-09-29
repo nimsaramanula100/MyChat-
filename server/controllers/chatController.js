@@ -171,7 +171,7 @@ export async function getGroupInfo(req, res) {
             displayName: u?.displayName,
             username: u?.username,
             avatar: u?.avatar,
-            phoneNumber: u?.phoneNumber,
+            email: u?.email,
             role: m.role,
             joinedAt: m.joinedAt,
           };
