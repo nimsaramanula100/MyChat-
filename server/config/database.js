@@ -252,7 +252,7 @@ export const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_chat_members_user ON chat_members(user_id);
     CREATE INDEX IF NOT EXISTS idx_chat_members_room ON chat_members(room_id);
     CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts(user_id);
-  \`;
+  `;
 
   try {
     await pool.query(schemaQuery);

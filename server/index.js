@@ -28,9 +28,11 @@ const server = http.createServer(app);
 
 const PORT = process.env.PORT || 5000;
 
+const allowedOrigins = [process.env.CLIENT_URL || 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173'];
+
 // CORS setup
 app.use(cors({
-  origin: true,
+  origin: allowedOrigins,
   credentials: true
 }));
 
@@ -57,7 +59,7 @@ app.get('/api/health', (req, res) => {
 // Setup Socket.IO
 const io = new SocketIOServer(server, {
   cors: {
-    origin: true,
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true
   }
