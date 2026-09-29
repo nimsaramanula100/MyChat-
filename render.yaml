@@ -6,12 +6,14 @@ services:
     startCommand: npm start
     envVars:
       - key: PORT
-        value: 5000
+        value: 10000
       - key: NODE_ENV
         value: production
+      - key: DEV_MODE
+        value: false
       - key: CLIENT_URL
         sync: false
-      - key: DATABASE_URL
+      - key: MONGODB_URI
         sync: false
       - key: JWT_SECRET
         sync: false

@@ -1,9 +1,4 @@
-import crypto from 'crypto';
-import { getDb } from '../config/database.js';
-
-function generateId() {
-  return crypto.randomUUID();
-}
+import { Report, BlockedUser, User } from '../models/index.js';
 
 export async function reportUser(req, res) {
   try {
@@ -12,14 +7,12 @@ export async function reportUser(req, res) {
       return res.status(400).json({ error: 'Reported user ID and category are required' });
     }
 
-    const db = await getDb();
-    const reportId = generateId();
-
-    await db.run(
-      `INSERT INTO reports (id, reporter_id, reported_user_id, category, description)
-       VALUES (?, ?, ?, ?, ?)`,
-      [reportId, req.user.id, reportedUserId, category, description || '']
-    );
+    await Report.create({
+      reporterId: req.user._id,
+      reportedUserId,
+      category,
+      description: description || '',
+    });
 
     return res.json({ success: true, message: 'Report submitted for review' });
   } catch (err) {
@@ -30,16 +23,12 @@ export async function reportUser(req, res) {
 export async function blockUser(req, res) {
   try {
     const { targetUserId } = req.body;
-    if (!targetUserId) {
-      return res.status(400).json({ error: 'Target user ID required' });
-    }
+    if (!targetUserId) return res.status(400).json({ error: 'Target user ID required' });
 
-    const db = await getDb();
-    await db.run(
-      `INSERT INTO blocked_users (id, user_id, blocked_user_id)
-       VALUES (?, ?, ?)
-       ON CONFLICT(user_id, blocked_user_id) DO NOTHING`,
-      [generateId(), req.user.id, targetUserId]
+    await BlockedUser.findOneAndUpdate(
+      { userId: req.user._id, blockedUserId: targetUserId },
+      {},
+      { upsert: true }
     );
 
     return res.json({ success: true, message: 'User blocked' });
@@ -51,9 +40,7 @@ export async function blockUser(req, res) {
 export async function unblockUser(req, res) {
   try {
     const { targetUserId } = req.params;
-    const db = await getDb();
-
-    await db.run('DELETE FROM blocked_users WHERE user_id = ? AND blocked_user_id = ?', [req.user.id, targetUserId]);
+    await BlockedUser.deleteOne({ userId: req.user._id, blockedUserId: targetUserId });
     return res.json({ success: true, message: 'User unblocked' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to unblock user' });
@@ -62,16 +49,23 @@ export async function unblockUser(req, res) {
 
 export async function getBlockedUsers(req, res) {
   try {
-    const db = await getDb();
-    const blocked = await db.all(
-      `SELECT b.id AS block_id, u.id, u.display_name, u.username, u.avatar
-       FROM blocked_users b
-       JOIN users u ON b.blocked_user_id = u.id
-       WHERE b.user_id = ?`,
-      [req.user.id]
-    );
+    const blocked = await BlockedUser.find({ userId: req.user._id }).lean();
+    const ids = blocked.map(b => b.blockedUserId);
+    const users = await User.find({ _id: { $in: ids } }).lean();
+    const userMap = Object.fromEntries(users.map(u => [String(u._id), u]));
 
-    return res.json({ blocked });
+    return res.json({
+      blocked: blocked.map(b => {
+        const u = userMap[String(b.blockedUserId)];
+        return {
+          block_id: b._id,
+          id: u?._id,
+          displayName: u?.displayName,
+          username: u?.username,
+          avatar: u?.avatar,
+        };
+      }),
+    });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch blocked users' });
   }

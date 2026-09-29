@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { getDb } from '../config/database.js';
+import { User, ChatMember, Message } from '../models/index.js';
 
 // Track online users: userId -> Set of socket IDs
 const onlineUsers = new Map();
@@ -15,10 +15,8 @@ export function setupSocket(io) {
     try {
       const jwtSecret = process.env.JWT_SECRET || 'super_secret_jwt_token_key_change_in_production_2026';
       const decoded = jwt.verify(token, jwtSecret);
-      
-      const db = await getDb();
-      const user = await db.get('SELECT id, display_name, username, avatar FROM users WHERE id = ?', [decoded.userId]);
 
+      const user = await User.findById(decoded.userId).lean();
       if (!user) {
         return next(new Error('User not found'));
       }
@@ -31,7 +29,7 @@ export function setupSocket(io) {
   });
 
   io.on('connection', async (socket) => {
-    const userId = socket.user.id;
+    const userId = String(socket.user._id);
     console.log(`Socket connected: ${socket.user.username} (${socket.id})`);
 
     // Add to online map
@@ -44,10 +42,9 @@ export function setupSocket(io) {
     socket.join(`user:${userId}`);
 
     // Join all chat rooms user is a member of
-    const db = await getDb();
-    const rooms = await db.all('SELECT room_id FROM chat_members WHERE user_id = ?', [userId]);
-    rooms.forEach(r => {
-      socket.join(`room:${r.room_id}`);
+    const memberships = await ChatMember.find({ userId }).lean();
+    memberships.forEach(m => {
+      socket.join(`room:${m.roomId}`);
     });
 
     // Notify online status
@@ -62,69 +59,44 @@ export function setupSocket(io) {
     socket.on('typing_start', ({ roomId }) => {
       socket.to(`room:${roomId}`).emit('typing_start', {
         roomId,
-        userId: socket.user.id,
+        userId: socket.user._id,
         username: socket.user.username,
-        displayName: socket.user.display_name
+        displayName: socket.user.displayName,
       });
     });
 
     socket.on('typing_stop', ({ roomId }) => {
       socket.to(`room:${roomId}`).emit('typing_stop', {
         roomId,
-        userId: socket.user.id
+        userId: socket.user._id,
       });
     });
 
-    // Handle new message sending
+    // Handle new message
     socket.on('send_message', async (data, callback) => {
       try {
         const { roomId, content, type = 'text', mediaUrl, mediaMeta, isViewOnce, replyToId } = data;
 
-        const db = await getDb();
-        const msgId = crypto.randomUUID();
-
-        await db.run(
-          `INSERT INTO messages (
-            id, room_id, sender_id, type, content, media_url, media_meta, reply_to_id, is_view_once
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            msgId,
-            roomId,
-            socket.user.id,
-            type,
-            content || '',
-            mediaUrl || '',
-            JSON.stringify(mediaMeta || {}),
-            replyToId || null,
-            isViewOnce ? 1 : 0
-          ]
-        );
-
-        // Mark read by sender
-        await db.run(
-          `INSERT INTO message_reads (id, message_id, user_id) VALUES (?, ?, ?)`,
-          [crypto.randomUUID(), msgId, socket.user.id]
-        );
-
-        const fullMessage = {
-          id: msgId,
-          room_id: roomId,
-          sender_id: socket.user.id,
-          sender_name: socket.user.display_name,
-          sender_avatar: socket.user.avatar,
+        const msg = await Message.create({
+          roomId,
+          senderId: socket.user._id,
           type,
           content: content || '',
-          media_url: mediaUrl || '',
+          mediaUrl: mediaUrl || '',
           mediaMeta: mediaMeta || {},
-          is_view_once: isViewOnce ? 1 : 0,
-          is_consumed: 0,
-          reply_to_id: replyToId || null,
-          created_at: new Date().toISOString(),
-          reactions: [],
-          reads: [{ user_id: socket.user.id, display_name: socket.user.display_name }]
+          replyToId: replyToId || null,
+          isViewOnce: Boolean(isViewOnce),
+          reads: [userId],
+        });
+
+        const fullMessage = {
+          ...msg.toObject(),
+          sender_name: socket.user.displayName,
+          sender_avatar: socket.user.avatar,
+          room_id: roomId,
+          sender_id: socket.user._id,
         };
 
-        // Broadcast to all room members
         io.to(`room:${roomId}`).emit('new_message', fullMessage);
 
         if (typeof callback === 'function') {
@@ -141,18 +113,15 @@ export function setupSocket(io) {
     // Handle message read
     socket.on('read_message', async ({ messageId, roomId }) => {
       try {
-        const db = await getDb();
-        await db.run(
-          `INSERT INTO message_reads (id, message_id, user_id) VALUES (?, ?, ?)
-           ON CONFLICT(message_id, user_id) DO NOTHING`,
-          [crypto.randomUUID(), messageId, socket.user.id]
-        );
+        await Message.findByIdAndUpdate(messageId, {
+          $addToSet: { reads: userId },
+        });
 
         io.to(`room:${roomId}`).emit('message_read', {
           messageId,
           roomId,
-          userId: socket.user.id,
-          displayName: socket.user.display_name
+          userId: socket.user._id,
+          displayName: socket.user.displayName,
         });
       } catch (err) {
         console.error('read_message error:', err);
@@ -162,18 +131,15 @@ export function setupSocket(io) {
     // Handle message reaction
     socket.on('add_reaction', async ({ messageId, roomId, emoji }) => {
       try {
-        const db = await getDb();
-        await db.run(
-          `INSERT INTO message_reactions (id, message_id, user_id, emoji) VALUES (?, ?, ?, ?)
-           ON CONFLICT(message_id, user_id, emoji) DO NOTHING`,
-          [crypto.randomUUID(), messageId, socket.user.id, emoji]
-        );
+        await Message.findByIdAndUpdate(messageId, {
+          $addToSet: { reactions: { userId, emoji } },
+        });
 
         io.to(`room:${roomId}`).emit('reaction_added', {
           messageId,
           roomId,
-          userId: socket.user.id,
-          emoji
+          userId: socket.user._id,
+          emoji,
         });
       } catch (err) {
         console.error('add_reaction error:', err);

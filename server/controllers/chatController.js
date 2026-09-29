@@ -1,98 +1,74 @@
-import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { getDb } from '../config/database.js';
-
-function generateId() {
-  return crypto.randomUUID();
-}
+import { ChatRoom, ChatMember, Message, HiddenChat, User } from '../models/index.js';
 
 export async function getChats(req, res) {
   try {
-    const db = await getDb();
-    const userId = req.user.id;
+    const userId = req.user._id;
 
-    // Fetch rooms where user is a member
-    const rooms = await db.all(
-      `SELECT r.id AS room_id, r.type, r.name AS group_name, r.avatar AS group_avatar, r.created_by,
-              m.is_pinned, m.is_muted, m.is_hidden, m.is_locked, m.custom_background
-       FROM chat_rooms r
-       JOIN chat_members m ON r.id = m.room_id
-       WHERE m.user_id = ?`,
-      [userId]
-    );
+    const memberships = await ChatMember.find({ userId }).lean();
+    const roomIds = memberships.map(m => m.roomId);
+    const rooms = await ChatRoom.find({ _id: { $in: roomIds } }).lean();
+    const memberMap = Object.fromEntries(memberships.map(m => [m.roomId, m]));
 
     const result = [];
 
     for (const room of rooms) {
-      // Find other member if direct or private chat
+      const membership = memberMap[room._id];
+
       let partner = null;
       if (room.type === 'direct' || room.type === 'private' || room.type === 'secret') {
-        const otherMember = await db.get(
-          `SELECT u.id, u.display_name, u.username, u.avatar, u.bio, u.phone_number
-           FROM chat_members cm
-           JOIN users u ON cm.user_id = u.id
-           WHERE cm.room_id = ? AND cm.user_id != ?`,
-          [room.room_id, userId]
-        );
-        partner = otherMember || null;
+        const otherMembership = await ChatMember.findOne({ roomId: room._id, userId: { $ne: userId } }).lean();
+        if (otherMembership) {
+          partner = await User.findById(otherMembership.userId).lean();
+        }
       }
 
-      // Fetch last message
-      const lastMsg = await db.get(
-        `SELECT msg.*, u.display_name AS sender_name
-         FROM messages msg
-         JOIN users u ON msg.sender_id = u.id
-         WHERE msg.room_id = ?
-         ORDER BY msg.created_at DESC LIMIT 1`,
-        [room.room_id]
-      );
+      const lastMsg = await Message.findOne({ roomId: room._id }).sort({ createdAt: -1 }).lean();
+      let senderName = '';
+      if (lastMsg) {
+        const sender = await User.findById(lastMsg.senderId).lean();
+        senderName = sender?.displayName || '';
+      }
 
-      // Member count for groups
       let memberCount = 0;
       if (room.type === 'group') {
-        const countRow = await db.get('SELECT COUNT(*) as count FROM chat_members WHERE room_id = ?', [room.room_id]);
-        memberCount = countRow ? countRow.count : 0;
+        memberCount = await ChatMember.countDocuments({ roomId: room._id });
       }
 
-      // Unread count
-      const unreadCountRow = await db.get(
-        `SELECT COUNT(*) AS count
-         FROM messages msg
-         WHERE msg.room_id = ? AND msg.sender_id != ?
-           AND msg.id NOT IN (SELECT message_id FROM message_reads WHERE user_id = ?)`,
-        [room.room_id, userId, userId]
-      );
+      const allMsgs = await Message.find({ roomId: room._id, senderId: { $ne: userId } }).lean();
+      const unreadCount = allMsgs.filter(m => !m.reads.includes(String(userId))).length;
 
       result.push({
-        id: room.room_id,
+        id: room._id,
         type: room.type,
-        name: room.type === 'group' ? room.group_name : (partner ? partner.display_name : 'Chat'),
-        avatar: room.type === 'group' ? (room.group_avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${room.group_name || 'Group'}`) : (partner ? partner.avatar : ''),
-        memberCount: memberCount,
+        name: room.type === 'group' ? room.name : (partner ? partner.displayName : 'Chat'),
+        avatar: room.type === 'group'
+          ? (room.avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${room.name || 'Group'}`)
+          : (partner ? partner.avatar : ''),
+        memberCount,
         partner: partner ? {
-          id: partner.id,
-          displayName: partner.display_name,
+          id: partner._id,
+          displayName: partner.displayName,
           username: partner.username,
           avatar: partner.avatar,
-          bio: partner.bio
+          bio: partner.bio,
         } : null,
-        isPinned: Boolean(room.is_pinned),
-        isMuted: Boolean(room.is_muted),
-        isHidden: Boolean(room.is_hidden),
-        isLocked: Boolean(room.is_locked),
-        customBackground: room.custom_background || '',
-        unreadCount: unreadCountRow ? unreadCountRow.count : 0,
+        isPinned: Boolean(membership?.isPinned),
+        isMuted: Boolean(membership?.isMuted),
+        isHidden: Boolean(membership?.isHidden),
+        isLocked: Boolean(membership?.isLocked),
+        customBackground: membership?.customBackground || '',
+        unreadCount,
         lastMessage: lastMsg ? {
-          id: lastMsg.id,
-          content: lastMsg.is_view_once && lastMsg.is_consumed ? '[Expired View Once Media]' : lastMsg.content,
+          id: lastMsg._id,
+          content: lastMsg.isViewOnce && lastMsg.isConsumed ? '[Expired View Once Media]' : lastMsg.content,
           type: lastMsg.type,
-          senderName: lastMsg.sender_name,
-          createdAt: lastMsg.created_at
-        } : null
+          senderName,
+          createdAt: lastMsg.createdAt,
+        } : null,
       });
     }
 
-    // Sort: pinned first, then by last message timestamp
     result.sort((a, b) => {
       if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
       const timeA = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
@@ -110,81 +86,55 @@ export async function getChats(req, res) {
 export async function createChat(req, res) {
   try {
     const { targetUserId, type, name, avatar, members } = req.body;
-    const db = await getDb();
-    const currentUserId = req.user.id;
+    const currentUserId = req.user._id;
 
     if (type === 'group') {
-      const roomId = generateId();
       const groupName = name ? name.trim() : 'New Group';
       const groupAvatar = avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(groupName)}`;
 
-      await db.run(
-        `INSERT INTO chat_rooms (id, type, name, avatar, created_by) VALUES (?, 'group', ?, ?, ?)`,
-        [roomId, groupName, groupAvatar, currentUserId]
-      );
+      const room = await ChatRoom.create({ type: 'group', name: groupName, avatar: groupAvatar, createdBy: currentUserId });
+      await ChatMember.create({ roomId: room._id, userId: currentUserId, role: 'admin' });
 
-      // Add creator as admin
-      await db.run(
-        `INSERT INTO chat_members (id, room_id, user_id, role) VALUES (?, ?, ?, 'admin')`,
-        [generateId(), roomId, currentUserId]
-      );
-
-      // Add other selected members
       if (Array.isArray(members)) {
         for (const mId of members) {
-          if (mId !== currentUserId) {
-            await db.run(
-              `INSERT INTO chat_members (id, room_id, user_id, role) VALUES (?, ?, ?, 'member')`,
-              [generateId(), roomId, mId]
-            );
+          if (String(mId) !== String(currentUserId)) {
+            await ChatMember.create({ roomId: room._id, userId: mId, role: 'member' });
           }
         }
       }
 
-      // Add initial system creation message
-      const creatorUser = await db.get('SELECT display_name FROM users WHERE id = ?', [currentUserId]);
-      const creatorName = creatorUser ? creatorUser.display_name : 'Someone';
+      const creator = await User.findById(currentUserId).lean();
+      await Message.create({
+        roomId: room._id,
+        senderId: currentUserId,
+        type: 'system',
+        content: `${creator?.displayName || 'Someone'} created group "${groupName}"`,
+      });
 
-      await db.run(
-        `INSERT INTO messages (id, room_id, sender_id, type, content) VALUES (?, ?, ?, 'system', ?)`,
-        [generateId(), roomId, currentUserId, `${creatorName} created group "${groupName}"`]
-      );
-
-      return res.json({ success: true, roomId });
+      return res.json({ success: true, roomId: room._id });
     } else {
-      // Direct or Private chat
       if (!targetUserId) {
         return res.status(400).json({ error: 'Target user ID is required' });
       }
 
-      const existingRoom = await db.get(
-        `SELECT r.id FROM chat_rooms r
-         JOIN chat_members m1 ON r.id = m1.room_id AND m1.user_id = ?
-         JOIN chat_members m2 ON r.id = m2.room_id AND m2.user_id = ?
-         WHERE r.type = ?`,
-        [currentUserId, targetUserId, type || 'direct']
-      );
+      const chatType = type || 'direct';
+      const myRooms = await ChatMember.find({ userId: currentUserId }).lean();
+      const myRoomIds = myRooms.map(m => m.roomId);
+      const theirRooms = await ChatMember.find({ userId: targetUserId, roomId: { $in: myRoomIds } }).lean();
+      const theirRoomIds = theirRooms.map(m => m.roomId);
 
-      if (existingRoom) {
-        return res.json({ success: true, roomId: existingRoom.id });
+      if (theirRoomIds.length > 0) {
+        const existingRoom = await ChatRoom.findOne({ _id: { $in: theirRoomIds }, type: chatType }).lean();
+        if (existingRoom) {
+          return res.json({ success: true, roomId: existingRoom._id, room: existingRoom });
+        }
       }
 
-      const roomId = generateId();
-      await db.run(
-        `INSERT INTO chat_rooms (id, type, created_by) VALUES (?, ?, ?)`,
-        [roomId, type || 'direct', currentUserId]
-      );
+      const room = await ChatRoom.create({ type: chatType, createdBy: currentUserId });
+      await ChatMember.create({ roomId: room._id, userId: currentUserId });
+      await ChatMember.create({ roomId: room._id, userId: targetUserId });
 
-      await db.run(
-        `INSERT INTO chat_members (id, room_id, user_id) VALUES (?, ?, ?)`,
-        [generateId(), roomId, currentUserId]
-      );
-      await db.run(
-        `INSERT INTO chat_members (id, room_id, user_id) VALUES (?, ?, ?)`,
-        [generateId(), roomId, targetUserId]
-      );
-
-      return res.json({ success: true, roomId });
+      return res.json({ success: true, roomId: room._id, room });
     }
   } catch (err) {
     console.error('createChat error:', err);
@@ -195,44 +145,38 @@ export async function createChat(req, res) {
 export async function getGroupInfo(req, res) {
   try {
     const { roomId } = req.params;
-    const db = await getDb();
+    const room = await ChatRoom.findOne({ _id: roomId, type: 'group' }).lean();
+    if (!room) return res.status(404).json({ error: 'Group not found' });
 
-    const room = await db.get('SELECT * FROM chat_rooms WHERE id = ? AND type = "group"', [roomId]);
-    if (!room) {
-      return res.status(404).json({ error: 'Group not found' });
-    }
+    const memberships = await ChatMember.find({ roomId }).lean();
+    const userIds = memberships.map(m => m.userId);
+    const users = await User.find({ _id: { $in: userIds } }).lean();
+    const userMap = Object.fromEntries(users.map(u => [String(u._id), u]));
 
-    const members = await db.all(
-      `SELECT m.role, m.joined_at, u.id, u.display_name, u.username, u.avatar, u.phone_number
-       FROM chat_members m
-       JOIN users u ON m.user_id = u.id
-       WHERE m.room_id = ?`,
-      [roomId]
-    );
-
-    const currentUserMember = members.find(m => m.id === req.user.id);
-    if (!currentUserMember) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
-    }
+    const currentMembership = memberships.find(m => String(m.userId) === String(req.user._id));
+    if (!currentMembership) return res.status(403).json({ error: 'You are not a member of this group' });
 
     return res.json({
       group: {
-        id: room.id,
+        id: room._id,
         name: room.name,
         avatar: room.avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(room.name)}`,
-        createdBy: room.created_by,
-        createdAt: room.created_at,
-        isAdmin: currentUserMember.role === 'admin',
-        members: members.map(m => ({
-          id: m.id,
-          displayName: m.display_name,
-          username: m.username,
-          avatar: m.avatar,
-          phoneNumber: m.phone_number,
-          role: m.role,
-          joinedAt: m.joined_at
-        }))
-      }
+        createdBy: room.createdBy,
+        createdAt: room.createdAt,
+        isAdmin: currentMembership.role === 'admin',
+        members: memberships.map(m => {
+          const u = userMap[String(m.userId)];
+          return {
+            id: u?._id,
+            displayName: u?.displayName,
+            username: u?.username,
+            avatar: u?.avatar,
+            phoneNumber: u?.phoneNumber,
+            role: m.role,
+            joinedAt: m.joinedAt,
+          };
+        }),
+      },
     });
   } catch (err) {
     console.error('getGroupInfo error:', err);
@@ -244,18 +188,16 @@ export async function updateGroupInfo(req, res) {
   try {
     const { roomId } = req.params;
     const { name, avatar } = req.body;
-    const db = await getDb();
 
-    const member = await db.get('SELECT role FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
+    const member = await ChatMember.findOne({ roomId, userId: req.user._id }).lean();
     if (!member || member.role !== 'admin') {
       return res.status(403).json({ error: 'Admin permission required to edit group info' });
     }
 
-    await db.run(
-      'UPDATE chat_rooms SET name = COALESCE(?, name), avatar = COALESCE(?, avatar) WHERE id = ?',
-      [name ? name.trim() : null, avatar ? avatar.trim() : null, roomId]
-    );
-
+    const updates = {};
+    if (name) updates.name = name.trim();
+    if (avatar) updates.avatar = avatar.trim();
+    await ChatRoom.findByIdAndUpdate(roomId, updates);
     return res.json({ success: true, message: 'Group details updated' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to update group info' });
@@ -266,22 +208,19 @@ export async function addGroupMembers(req, res) {
   try {
     const { roomId } = req.params;
     const { members } = req.body;
-    const db = await getDb();
 
-    const member = await db.get('SELECT role FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
+    const member = await ChatMember.findOne({ roomId, userId: req.user._id }).lean();
     if (!member || member.role !== 'admin') {
       return res.status(403).json({ error: 'Admin permission required to add members' });
     }
 
     if (Array.isArray(members)) {
       for (const mId of members) {
-        const existing = await db.get('SELECT id FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, mId]);
-        if (!existing) {
-          await db.run(
-            'INSERT INTO chat_members (id, room_id, user_id, role) VALUES (?, ?, ?, "member")',
-            [generateId(), roomId, mId]
-          );
-        }
+        await ChatMember.findOneAndUpdate(
+          { roomId, userId: mId },
+          { roomId, userId: mId, role: 'member' },
+          { upsert: true }
+        );
       }
     }
 
@@ -294,14 +233,11 @@ export async function addGroupMembers(req, res) {
 export async function removeGroupMember(req, res) {
   try {
     const { roomId, targetUserId } = req.params;
-    const db = await getDb();
-
-    const currentMember = await db.get('SELECT role FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
-    if (!currentMember || (currentMember.role !== 'admin' && req.user.id !== targetUserId)) {
+    const currentMember = await ChatMember.findOne({ roomId, userId: req.user._id }).lean();
+    if (!currentMember || (currentMember.role !== 'admin' && String(req.user._id) !== String(targetUserId))) {
       return res.status(403).json({ error: 'Admin permission required to remove member' });
     }
-
-    await db.run('DELETE FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, targetUserId]);
+    await ChatMember.deleteOne({ roomId, userId: targetUserId });
     return res.json({ success: true, message: 'Member removed' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to remove member' });
@@ -311,9 +247,7 @@ export async function removeGroupMember(req, res) {
 export async function leaveGroup(req, res) {
   try {
     const { roomId } = req.params;
-    const db = await getDb();
-
-    await db.run('DELETE FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
+    await ChatMember.deleteOne({ roomId, userId: req.user._id });
     return res.json({ success: true, message: 'Left group successfully' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to leave group' });
@@ -324,53 +258,34 @@ export async function getMessages(req, res) {
   try {
     const { roomId } = req.params;
     const { limit = 50, before } = req.query;
-    const db = await getDb();
 
-    const isMember = await db.get('SELECT id FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
-    if (!isMember) {
-      return res.status(403).json({ error: 'You are not a member of this chat' });
-    }
+    const isMember = await ChatMember.findOne({ roomId, userId: req.user._id }).lean();
+    if (!isMember) return res.status(403).json({ error: 'You are not a member of this chat' });
 
-    let query = `
-      SELECT m.*, u.display_name AS sender_name, u.avatar AS sender_avatar
-      FROM messages m
-      JOIN users u ON m.sender_id = u.id
-      WHERE m.room_id = ?
-    `;
-    const params = [roomId];
+    const query = { roomId };
+    if (before) query.createdAt = { $lt: new Date(before) };
 
-    if (before) {
-      query += ` AND m.created_at < ?`;
-      params.push(before);
-    }
+    const messages = await Message.find(query).sort({ createdAt: 1 }).limit(parseInt(limit)).lean();
 
-    query += ` ORDER BY m.created_at ASC LIMIT ?`;
-    params.push(parseInt(limit));
+    const senderIds = [...new Set(messages.map(m => String(m.senderId)))];
+    const senders = await User.find({ _id: { $in: senderIds } }).lean();
+    const senderMap = Object.fromEntries(senders.map(u => [String(u._id), u]));
 
-    const messages = await db.all(query, params);
-
-    for (const msg of messages) {
-      msg.mediaMeta = msg.media_meta ? JSON.parse(msg.media_meta) : {};
-      
-      if (msg.is_view_once && msg.is_consumed) {
+    const enriched = messages.map(msg => {
+      const sender = senderMap[String(msg.senderId)];
+      if (msg.isViewOnce && msg.isConsumed) {
         msg.content = 'Viewed Media (Expired)';
-        msg.media_url = '';
+        msg.mediaUrl = '';
       }
+      return {
+        ...msg,
+        sender_name: sender?.displayName || '',
+        sender_avatar: sender?.avatar || '',
+        mediaMeta: msg.mediaMeta || {},
+      };
+    });
 
-      const reactions = await db.all(
-        `SELECT emoji, COUNT(*) as count FROM message_reactions WHERE message_id = ? GROUP BY emoji`,
-        [msg.id]
-      );
-      msg.reactions = reactions;
-
-      const reads = await db.all(
-        `SELECT r.user_id, u.display_name FROM message_reads r JOIN users u ON r.user_id = u.id WHERE r.message_id = ?`,
-        [msg.id]
-      );
-      msg.reads = reads;
-    }
-
-    return res.json({ messages });
+    return res.json({ messages: enriched });
   } catch (err) {
     console.error('getMessages error:', err);
     return res.status(500).json({ error: 'Failed to fetch messages' });
@@ -380,55 +295,40 @@ export async function getMessages(req, res) {
 export async function sendMessage(req, res) {
   try {
     const { roomId, content, type = 'text', mediaUrl, mediaMeta, replyToId, isViewOnce, disappearingSeconds } = req.body;
-    const db = await getDb();
 
-    const isMember = await db.get('SELECT id FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
-    if (!isMember) {
-      return res.status(403).json({ error: 'Not authorized for this room' });
-    }
+    const isMember = await ChatMember.findOne({ roomId, userId: req.user._id }).lean();
+    if (!isMember) return res.status(403).json({ error: 'Not authorized for this room' });
 
-    const msgId = generateId();
-    await db.run(
-      `INSERT INTO messages (
-        id, room_id, sender_id, type, content, media_url, media_meta,
-        reply_to_id, is_disappearing, disappearing_seconds, is_view_once
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        msgId,
-        roomId,
-        req.user.id,
-        type,
-        content || '',
-        mediaUrl || '',
-        JSON.stringify(mediaMeta || {}),
-        replyToId || null,
-        disappearingSeconds ? 1 : 0,
-        disappearingSeconds || 0,
-        isViewOnce ? 1 : 0
-      ]
-    );
+    const msg = await Message.create({
+      roomId,
+      senderId: req.user._id,
+      type,
+      content: content || '',
+      mediaUrl: mediaUrl || '',
+      mediaMeta: mediaMeta || {},
+      replyToId: replyToId || null,
+      isDisappearing: Boolean(disappearingSeconds),
+      disappearingSeconds: disappearingSeconds || 0,
+      isViewOnce: Boolean(isViewOnce),
+      reads: [String(req.user._id)],
+    });
 
-    await db.run(
-      `INSERT INTO message_reads (id, message_id, user_id) VALUES (?, ?, ?)`,
-      [generateId(), msgId, req.user.id]
-    );
+    const sender = req.user;
+    const fullMessage = {
+      ...msg.toObject(),
+      sender_name: sender.displayName,
+      sender_avatar: sender.avatar,
+    };
 
-    const message = await db.get(
-      `SELECT m.*, u.display_name AS sender_name, u.avatar AS sender_avatar
-       FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.id = ?`,
-      [msgId]
-    );
     const { tempId } = req.body;
-    message.mediaMeta = JSON.parse(message.media_meta || '{}');
-    if (tempId) message.tempId = tempId;
+    if (tempId) fullMessage.tempId = tempId;
 
-    // Broadcast to room via Socket.IO
     const io = req.app.get('io');
     if (io) {
-      io.to(`room:${roomId}`).emit('new_message', message);
+      io.to(`room:${roomId}`).emit('new_message', fullMessage);
     }
 
-    return res.json({ success: true, message });
+    return res.json({ success: true, message: fullMessage });
   } catch (err) {
     console.error('sendMessage error:', err);
     return res.status(500).json({ error: 'Failed to send message' });
@@ -438,14 +338,11 @@ export async function sendMessage(req, res) {
 export async function consumeViewOnce(req, res) {
   try {
     const { messageId } = req.params;
-    const db = await getDb();
-
-    const msg = await db.get('SELECT * FROM messages WHERE id = ?', [messageId]);
-    if (!msg || !msg.is_view_once) {
+    const msg = await Message.findById(messageId).lean();
+    if (!msg || !msg.isViewOnce) {
       return res.status(400).json({ error: 'Not a view-once message' });
     }
-
-    await db.run('UPDATE messages SET is_consumed = 1, media_url = "", content = "Viewed Media (Expired)" WHERE id = ?', [messageId]);
+    await Message.findByIdAndUpdate(messageId, { isConsumed: true, mediaUrl: '', content: 'Viewed Media (Expired)' });
     return res.json({ success: true, message: 'View-once media consumed' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to consume view-once media' });
@@ -458,17 +355,13 @@ export async function hideChat(req, res) {
     if (!pin || pin.length < 4) {
       return res.status(400).json({ error: 'PIN (at least 4 digits) is required' });
     }
-
-    const db = await getDb();
     const pinHash = await bcrypt.hash(pin, 10);
-
-    await db.run('UPDATE chat_members SET is_hidden = 1 WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
-    await db.run(
-      `INSERT INTO hidden_chats (id, user_id, room_id, pin_hash) VALUES (?, ?, ?, ?)
-       ON CONFLICT(user_id, room_id) DO UPDATE SET pin_hash = excluded.pin_hash`,
-      [generateId(), req.user.id, roomId, pinHash]
+    await ChatMember.findOneAndUpdate({ roomId, userId: req.user._id }, { isHidden: true });
+    await HiddenChat.findOneAndUpdate(
+      { userId: req.user._id, roomId },
+      { pinHash },
+      { upsert: true }
     );
-
     return res.json({ success: true, message: 'Chat moved to Hidden Chats' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to hide chat' });
@@ -478,16 +371,12 @@ export async function hideChat(req, res) {
 export async function unlockHiddenChats(req, res) {
   try {
     const { pin } = req.body;
-    if (!pin) {
-      return res.status(400).json({ error: 'PIN required' });
-    }
+    if (!pin) return res.status(400).json({ error: 'PIN required' });
 
-    const db = await getDb();
-    const hiddenRecords = await db.all('SELECT pin_hash FROM hidden_chats WHERE user_id = ?', [req.user.id]);
-    
+    const hiddenRecords = await HiddenChat.find({ userId: req.user._id }).lean();
     let valid = false;
     for (const rec of hiddenRecords) {
-      if (await bcrypt.compare(pin, rec.pin_hash)) {
+      if (await bcrypt.compare(pin, rec.pinHash)) {
         valid = true;
         break;
       }
@@ -506,13 +395,12 @@ export async function unlockHiddenChats(req, res) {
 export async function togglePinChat(req, res) {
   try {
     const { roomId } = req.params;
-    const db = await getDb();
-    const member = await db.get('SELECT is_pinned FROM chat_members WHERE room_id = ? AND user_id = ?', [roomId, req.user.id]);
+    const member = await ChatMember.findOne({ roomId, userId: req.user._id }).lean();
     if (!member) return res.status(404).json({ error: 'Chat member record not found' });
 
-    const newPinned = member.is_pinned ? 0 : 1;
-    await db.run('UPDATE chat_members SET is_pinned = ? WHERE room_id = ? AND user_id = ?', [newPinned, roomId, req.user.id]);
-    return res.json({ success: true, isPinned: Boolean(newPinned) });
+    const newPinned = !member.isPinned;
+    await ChatMember.findOneAndUpdate({ roomId, userId: req.user._id }, { isPinned: newPinned });
+    return res.json({ success: true, isPinned: newPinned });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to toggle pin state' });
   }
@@ -522,9 +410,7 @@ export async function setChatBackground(req, res) {
   try {
     const { roomId } = req.params;
     const { background } = req.body;
-    const db = await getDb();
-
-    await db.run('UPDATE chat_members SET custom_background = ? WHERE room_id = ? AND user_id = ?', [background || '', roomId, req.user.id]);
+    await ChatMember.findOneAndUpdate({ roomId, userId: req.user._id }, { customBackground: background || '' });
     return res.json({ success: true, background });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to set chat background' });

@@ -25,3 +25,7 @@ npm-debug.log*
 .DS_Store
 .vscode/
 .idea/
+
+# Test scripts
+test.js
+test_db.js

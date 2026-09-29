@@ -1,37 +1,28 @@
-import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { getDb } from '../config/database.js';
+import { User } from '../models/index.js';
 import { calculateHaversineDistance } from '../utils/distance.js';
 import { normalizePhoneNumber } from '../utils/phone.js';
 
-function generateId() {
-  return crypto.randomUUID();
-}
-
 export async function getMe(req, res) {
   try {
-    const db = await getDb();
-    const user = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id]);
-    const privacy = await db.get('SELECT * FROM user_privacy_settings WHERE user_id = ?', [req.user.id]);
-    const security = await db.get('SELECT * FROM user_security_settings WHERE user_id = ?', [req.user.id]);
-
+    const user = await User.findById(req.user._id).lean();
     return res.json({
       user: {
-        id: user.id,
-        phoneNumber: user.phone_number,
-        displayName: user.display_name,
+        id: user._id,
+        phoneNumber: user.phoneNumber,
+        displayName: user.displayName,
         username: user.username,
         bio: user.bio,
         avatar: user.avatar,
-        isAdmin: Boolean(user.is_admin),
-        createdAt: user.created_at
+        isAdmin: Boolean(user.isAdmin),
+        createdAt: user.createdAt,
       },
-      privacy: privacy || {},
+      privacy: user.privacy || {},
       security: {
-        hasPin: Boolean(security?.app_lock_pin_hash),
-        notificationPrivacy: security?.notification_privacy || 'preview',
-        autoLockMinutes: security?.auto_lock_minutes || 0
-      }
+        hasPin: Boolean(user.security?.appLockPinHash),
+        notificationPrivacy: user.security?.notificationPrivacy || 'preview',
+        autoLockMinutes: user.security?.autoLockMinutes || 0,
+      },
     });
   } catch (err) {
     console.error('getMe error:', err);
@@ -42,46 +33,33 @@ export async function getMe(req, res) {
 export async function updateProfile(req, res) {
   try {
     const { displayName, username, bio, avatar } = req.body;
-    const db = await getDb();
 
     if (username) {
-      // Check username uniqueness if changing
-      const existing = await db.get('SELECT id FROM users WHERE username = ? AND id != ?', [username.trim(), req.user.id]);
+      const existing = await User.findOne({ username: username.trim(), _id: { $ne: req.user._id } }).lean();
       if (existing) {
         return res.status(400).json({ error: 'Username is already taken' });
       }
     }
 
-    await db.run(
-      `UPDATE users SET
-        display_name = COALESCE(?, display_name),
-        username = COALESCE(?, username),
-        bio = COALESCE(?, bio),
-        avatar = COALESCE(?, avatar),
-        updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [
-        displayName ? displayName.trim() : null,
-        username ? username.trim() : null,
-        bio !== undefined ? bio.trim() : null,
-        avatar || null,
-        req.user.id
-      ]
-    );
+    const updates = {};
+    if (displayName) updates.displayName = displayName.trim();
+    if (username) updates.username = username.trim();
+    if (bio !== undefined) updates.bio = bio.trim();
+    if (avatar) updates.avatar = avatar;
 
-    const updatedUser = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    const updatedUser = await User.findByIdAndUpdate(req.user._id, updates, { new: true }).lean();
 
     return res.json({
       success: true,
       user: {
-        id: updatedUser.id,
-        phoneNumber: updatedUser.phone_number,
-        displayName: updatedUser.display_name,
+        id: updatedUser._id,
+        phoneNumber: updatedUser.phoneNumber,
+        displayName: updatedUser.displayName,
         username: updatedUser.username,
         bio: updatedUser.bio,
         avatar: updatedUser.avatar,
-        isAdmin: Boolean(updatedUser.is_admin)
-      }
+        isAdmin: Boolean(updatedUser.isAdmin),
+      },
     });
   } catch (err) {
     console.error('updateProfile error:', err);
@@ -98,37 +76,20 @@ export async function updatePrivacySettings(req, res) {
       onlineStatusPrivacy,
       locationDiscoveryEnabled,
       whoCanMessage,
-      readReceiptsEnabled
+      readReceiptsEnabled,
     } = req.body;
 
-    const db = await getDb();
-    await db.run(
-      `INSERT INTO user_privacy_settings (
-        user_id, phone_privacy, last_seen_privacy, profile_photo_privacy,
-        online_status_privacy, location_discovery_enabled, who_can_message, read_receipts_enabled
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(user_id) DO UPDATE SET
-        phone_privacy = COALESCE(excluded.phone_privacy, phone_privacy),
-        last_seen_privacy = COALESCE(excluded.last_seen_privacy, last_seen_privacy),
-        profile_photo_privacy = COALESCE(excluded.profile_photo_privacy, profile_photo_privacy),
-        online_status_privacy = COALESCE(excluded.online_status_privacy, online_status_privacy),
-        location_discovery_enabled = COALESCE(excluded.location_discovery_enabled, location_discovery_enabled),
-        who_can_message = COALESCE(excluded.who_can_message, who_can_message),
-        read_receipts_enabled = COALESCE(excluded.read_receipts_enabled, read_receipts_enabled)`,
-      [
-        req.user.id,
-        phonePrivacy,
-        lastSeenPrivacy,
-        profilePhotoPrivacy,
-        onlineStatusPrivacy,
-        locationDiscoveryEnabled !== undefined ? (locationDiscoveryEnabled ? 1 : 0) : null,
-        whoCanMessage,
-        readReceiptsEnabled !== undefined ? (readReceiptsEnabled ? 1 : 0) : null
-      ]
-    );
+    const privacyUpdate = {};
+    if (phonePrivacy !== undefined) privacyUpdate['privacy.phonePrivacy'] = phonePrivacy;
+    if (lastSeenPrivacy !== undefined) privacyUpdate['privacy.lastSeenPrivacy'] = lastSeenPrivacy;
+    if (profilePhotoPrivacy !== undefined) privacyUpdate['privacy.profilePhotoPrivacy'] = profilePhotoPrivacy;
+    if (onlineStatusPrivacy !== undefined) privacyUpdate['privacy.onlineStatusPrivacy'] = onlineStatusPrivacy;
+    if (locationDiscoveryEnabled !== undefined) privacyUpdate['privacy.locationDiscoveryEnabled'] = locationDiscoveryEnabled;
+    if (whoCanMessage !== undefined) privacyUpdate['privacy.whoCanMessage'] = whoCanMessage;
+    if (readReceiptsEnabled !== undefined) privacyUpdate['privacy.readReceiptsEnabled'] = readReceiptsEnabled;
 
-    const updated = await db.get('SELECT * FROM user_privacy_settings WHERE user_id = ?', [req.user.id]);
-    return res.json({ success: true, privacy: updated });
+    const updated = await User.findByIdAndUpdate(req.user._id, privacyUpdate, { new: true }).lean();
+    return res.json({ success: true, privacy: updated.privacy });
   } catch (err) {
     console.error('updatePrivacy error:', err);
     return res.status(500).json({ error: 'Failed to update privacy settings' });
@@ -138,35 +99,19 @@ export async function updatePrivacySettings(req, res) {
 export async function updateSecuritySettings(req, res) {
   try {
     const { pin, notificationPrivacy, autoLockMinutes } = req.body;
-    const db = await getDb();
 
-    let pinHash = null;
+    const securityUpdate = {};
     if (pin !== undefined) {
       if (pin && pin.length >= 4) {
-        pinHash = await bcrypt.hash(pin, 10);
+        securityUpdate['security.appLockPinHash'] = await bcrypt.hash(pin, 10);
       } else if (pin === '' || pin === null) {
-        pinHash = '';
+        securityUpdate['security.appLockPinHash'] = '';
       }
     }
+    if (notificationPrivacy !== undefined) securityUpdate['security.notificationPrivacy'] = notificationPrivacy;
+    if (autoLockMinutes !== undefined) securityUpdate['security.autoLockMinutes'] = autoLockMinutes;
 
-    await db.run(
-      `INSERT INTO user_security_settings (user_id, app_lock_pin_hash, auto_lock_minutes, notification_privacy)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(user_id) DO UPDATE SET
-        app_lock_pin_hash = COALESCE(?, app_lock_pin_hash),
-        auto_lock_minutes = COALESCE(?, auto_lock_minutes),
-        notification_privacy = COALESCE(?, notification_privacy)`,
-      [
-        req.user.id,
-        pinHash !== null ? pinHash : '',
-        autoLockMinutes || 0,
-        notificationPrivacy || 'preview',
-        pinHash !== null ? pinHash : null,
-        autoLockMinutes,
-        notificationPrivacy
-      ]
-    );
-
+    await User.findByIdAndUpdate(req.user._id, securityUpdate);
     return res.json({ success: true, message: 'Security settings updated' });
   } catch (err) {
     console.error('updateSecurity error:', err);
@@ -181,17 +126,12 @@ export async function updateLocation(req, res) {
       return res.status(400).json({ error: 'Latitude and longitude required' });
     }
 
-    const db = await getDb();
-    await db.run(
-      `INSERT INTO user_locations (user_id, latitude, longitude, approx_location_name, updated_at)
-       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(user_id) DO UPDATE SET
-        latitude = excluded.latitude,
-        longitude = excluded.longitude,
-        approx_location_name = excluded.approx_location_name,
-        updated_at = CURRENT_TIMESTAMP`,
-      [req.user.id, latitude, longitude, locationName || 'Approximate area']
-    );
+    await User.findByIdAndUpdate(req.user._id, {
+      'location.latitude': latitude,
+      'location.longitude': longitude,
+      'location.approxLocationName': locationName || 'Approximate area',
+      'location.updatedAt': new Date(),
+    });
 
     return res.json({ success: true, message: 'Location updated successfully' });
   } catch (err) {
@@ -201,53 +141,33 @@ export async function updateLocation(req, res) {
 
 export async function getNearbyPeople(req, res) {
   try {
-    const db = await getDb();
+    const me = await User.findById(req.user._id).lean();
 
-    // Check current user location
-    const myLoc = await db.get('SELECT * FROM user_locations WHERE user_id = ?', [req.user.id]);
-    const myPrivacy = await db.get('SELECT location_discovery_enabled FROM user_privacy_settings WHERE user_id = ?', [req.user.id]);
-
-    if (!myPrivacy || !myPrivacy.location_discovery_enabled) {
-      return res.json({
-        enabled: false,
-        message: 'Location discovery is currently disabled in your privacy settings.',
-        people: []
-      });
+    if (!me.privacy?.locationDiscoveryEnabled) {
+      return res.json({ enabled: false, message: 'Location discovery is currently disabled in your privacy settings.', people: [] });
     }
 
-    // Default coords if user hasn't set custom coords (e.g. Colombo, Sri Lanka / London default)
-    const myLat = myLoc ? myLoc.latitude : 6.9271;
-    const myLon = myLoc ? myLoc.longitude : 79.8612;
+    const myLat = me.location?.latitude || 6.9271;
+    const myLon = me.location?.longitude || 79.8612;
 
-    // Fetch other users who have location discovery enabled
-    const candidateUsers = await db.all(
-      `SELECT u.id, u.display_name, u.username, u.avatar, u.bio,
-              l.latitude, l.longitude, l.approx_location_name,
-              p.location_discovery_enabled, p.phone_privacy
-       FROM users u
-       JOIN user_locations l ON u.id = l.user_id
-       LEFT JOIN user_privacy_settings p ON u.id = p.user_id
-       WHERE u.id != ? AND u.is_suspended = 0 AND (p.location_discovery_enabled IS NULL OR p.location_discovery_enabled = 1)`,
-      [req.user.id]
-    );
+    const candidates = await User.find({
+      _id: { $ne: req.user._id },
+      isSuspended: false,
+      'location.latitude': { $exists: true },
+      'privacy.locationDiscoveryEnabled': { $ne: false },
+    }).lean();
 
-    const people = candidateUsers.map(u => {
-      const distText = calculateHaversineDistance(myLat, myLon, u.latitude, u.longitude);
-      return {
-        id: u.id,
-        displayName: u.display_name,
-        username: u.username,
-        avatar: u.avatar,
-        bio: u.bio,
-        distanceText: distText,
-        approxLocation: u.approx_location_name || 'Nearby'
-      };
-    });
+    const people = candidates.map(u => ({
+      id: u._id,
+      displayName: u.displayName,
+      username: u.username,
+      avatar: u.avatar,
+      bio: u.bio,
+      distanceText: calculateHaversineDistance(myLat, myLon, u.location.latitude, u.location.longitude),
+      approxLocation: u.location?.approxLocationName || 'Nearby',
+    }));
 
-    return res.json({
-      enabled: true,
-      people
-    });
+    return res.json({ enabled: true, people });
   } catch (err) {
     console.error('getNearbyPeople error:', err);
     return res.status(500).json({ error: 'Failed to fetch nearby people' });
@@ -261,25 +181,21 @@ export async function searchUsers(req, res) {
       return res.json({ users: [] });
     }
 
-    const searchTerm = `%${query.trim()}%`;
-    const db = await getDb();
-    const users = await db.all(
-      `SELECT id, display_name, username, avatar, bio, phone_number
-       FROM users
-       WHERE (username LIKE ? OR display_name LIKE ? OR phone_number LIKE ?)
-         AND id != ? AND is_suspended = 0
-       LIMIT 20`,
-      [searchTerm, searchTerm, searchTerm, req.user.id]
-    );
+    const regex = new RegExp(query.trim(), 'i');
+    const users = await User.find({
+      $or: [{ username: regex }, { displayName: regex }, { phoneNumber: regex }],
+      _id: { $ne: req.user._id },
+      isSuspended: false,
+    }).limit(20).lean();
 
     return res.json({
       users: users.map(u => ({
-        id: u.id,
-        displayName: u.display_name,
+        id: u._id,
+        displayName: u.displayName,
         username: u.username,
         avatar: u.avatar,
-        bio: u.bio
-      }))
+        bio: u.bio,
+      })),
     });
   } catch (err) {
     return res.status(500).json({ error: 'User search failed' });
@@ -288,16 +204,28 @@ export async function searchUsers(req, res) {
 
 export async function getContacts(req, res) {
   try {
-    const db = await getDb();
-    const contacts = await db.all(
-      `SELECT c.id AS contact_record_id, c.alias, u.id, u.display_name, u.username, u.avatar, u.bio, u.phone_number
-       FROM contacts c
-       JOIN users u ON c.contact_id = u.id
-       WHERE c.user_id = ?`,
-      [req.user.id]
-    );
+    const { Contact } = await import('../models/index.js');
+    const contacts = await Contact.find({ userId: req.user._id }).lean();
 
-    return res.json({ contacts });
+    const userIds = contacts.map(c => c.contactId);
+    const users = await User.find({ _id: { $in: userIds } }).lean();
+    const userMap = Object.fromEntries(users.map(u => [u._id, u]));
+
+    return res.json({
+      contacts: contacts.map(c => {
+        const u = userMap[c.contactId];
+        return {
+          contact_record_id: c._id,
+          alias: c.alias,
+          id: u?._id,
+          displayName: u?.displayName,
+          username: u?.username,
+          avatar: u?.avatar,
+          bio: u?.bio,
+          phoneNumber: u?.phoneNumber,
+        };
+      }),
+    });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch contacts' });
   }
@@ -305,34 +233,28 @@ export async function getContacts(req, res) {
 
 export async function addContact(req, res) {
   try {
+    const { Contact } = await import('../models/index.js');
     const { contactUserId, phoneNumber, alias } = req.body;
-    const db = await getDb();
 
     let targetUser = null;
-
     if (contactUserId) {
-      targetUser = await db.get('SELECT * FROM users WHERE id = ?', [contactUserId]);
+      targetUser = await User.findById(contactUserId).lean();
     } else if (phoneNumber) {
       const cleanPhone = normalizePhoneNumber(phoneNumber);
-      targetUser = await db.get('SELECT * FROM users WHERE phone_number = ?', [cleanPhone]);
+      targetUser = await User.findOne({ phoneNumber: cleanPhone }).lean();
     }
 
     if (!targetUser) {
-      return res.status(404).json({
-        registered: false,
-        error: 'This number is not registered on MyChat.'
-      });
+      return res.status(404).json({ registered: false, error: 'This number is not registered on MyChat.' });
     }
-
-    if (targetUser.id === req.user.id) {
+    if (String(targetUser._id) === String(req.user._id)) {
       return res.status(400).json({ error: 'You cannot add yourself as a contact.' });
     }
 
-    await db.run(
-      `INSERT INTO contacts (id, user_id, contact_id, alias)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(user_id, contact_id) DO UPDATE SET alias = excluded.alias`,
-      [generateId(), req.user.id, targetUser.id, alias || targetUser.display_name]
+    await Contact.findOneAndUpdate(
+      { userId: req.user._id, contactId: targetUser._id },
+      { alias: alias || targetUser.displayName },
+      { upsert: true, new: true }
     );
 
     return res.json({
@@ -340,13 +262,13 @@ export async function addContact(req, res) {
       registered: true,
       message: 'Contact added successfully',
       contact: {
-        id: targetUser.id,
-        displayName: targetUser.display_name,
+        id: targetUser._id,
+        displayName: targetUser.displayName,
         username: targetUser.username,
         avatar: targetUser.avatar,
         bio: targetUser.bio,
-        phoneNumber: targetUser.phone_number
-      }
+        phoneNumber: targetUser.phoneNumber,
+      },
     });
   } catch (err) {
     console.error('addContact error:', err);
@@ -361,48 +283,29 @@ export async function syncContacts(req, res) {
       return res.json({ registered: [], unregistered: [] });
     }
 
-    const db = await getDb();
-    const normalizedMap = new Map();
-    phoneNumbers.forEach(p => {
-      const norm = normalizePhoneNumber(p);
-      if (norm) normalizedMap.set(norm, p);
+    const normalizedList = [...new Set(phoneNumbers.map(p => normalizePhoneNumber(p)).filter(Boolean))];
+    if (!normalizedList.length) return res.json({ registered: [], unregistered: [] });
+
+    const matchedUsers = await User.find({
+      phoneNumber: { $in: normalizedList },
+      _id: { $ne: req.user._id },
+      isSuspended: false,
+    }).lean();
+
+    const registeredPhones = new Set(matchedUsers.map(u => u.phoneNumber));
+    const unregistered = normalizedList.filter(p => !registeredPhones.has(p)).map(p => ({ normalizedPhone: p }));
+
+    return res.json({
+      registered: matchedUsers.map(u => ({
+        id: u._id,
+        displayName: u.displayName,
+        username: u.username,
+        avatar: u.avatar,
+        bio: u.bio,
+        phoneNumber: u.phoneNumber,
+      })),
+      unregistered,
     });
-
-    const normalizedList = Array.from(normalizedMap.keys());
-    if (normalizedList.length === 0) {
-      return res.json({ registered: [], unregistered: [] });
-    }
-
-    const placeholders = normalizedList.map(() => '?').join(',');
-    const matchedUsers = await db.all(
-      `SELECT id, phone_number, display_name, username, avatar, bio
-       FROM users
-       WHERE phone_number IN (${placeholders}) AND id != ? AND is_suspended = 0`,
-      [...normalizedList, req.user.id]
-    );
-
-    const registeredPhones = new Set(matchedUsers.map(u => u.phone_number));
-    const unregistered = [];
-
-    normalizedList.forEach(norm => {
-      if (!registeredPhones.has(norm)) {
-        unregistered.push({
-          rawPhone: normalizedMap.get(norm),
-          normalizedPhone: norm
-        });
-      }
-    });
-
-    const registered = matchedUsers.map(u => ({
-      id: u.id,
-      displayName: u.display_name,
-      username: u.username,
-      avatar: u.avatar,
-      bio: u.bio,
-      phoneNumber: u.phone_number
-    }));
-
-    return res.json({ registered, unregistered });
   } catch (err) {
     console.error('syncContacts error:', err);
     return res.status(500).json({ error: 'Failed to sync contacts' });
@@ -411,8 +314,7 @@ export async function syncContacts(req, res) {
 
 export async function deleteAccount(req, res) {
   try {
-    const db = await getDb();
-    await db.run('DELETE FROM users WHERE id = ?', [req.user.id]);
+    await User.findByIdAndDelete(req.user._id);
     return res.json({ success: true, message: 'Account permanently deleted' });
   } catch (err) {
     return res.status(500).json({ error: 'Account deletion failed' });

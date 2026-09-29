@@ -1,12 +1,6 @@
 import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
-import { getDb } from '../config/database.js';
-
+import { User, OtpVerification, Session } from '../models/index.js';
 import { normalizePhoneNumber } from '../utils/phone.js';
-
-function generateId() {
-  return crypto.randomUUID();
-}
 
 export async function sendOtp(req, res) {
   try {
@@ -16,35 +10,31 @@ export async function sendOtp(req, res) {
     }
 
     const cleanPhone = normalizePhoneNumber(phoneNumber);
-    const isDevMode = process.env.DEV_MODE === 'true' || process.env.DEV_MODE === true || true;
-    
-    // Generate dynamic 6-digit OTP (e.g. 123456 or random)
     const generatedOtp = process.env.DEV_OTP || Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins expiry
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    const db = await getDb();
+    // Rate-limit: 15 seconds between OTPs
+    const recent = await OtpVerification
+      .findOne({ phoneNumber: cleanPhone })
+      .sort({ createdAt: -1 })
+      .lean();
 
-    // Check resend rate limit (must wait at least 15s between requests)
-    const recent = await db.get(
-      `SELECT created_at FROM otp_verifications WHERE phone_number = ? ORDER BY created_at DESC LIMIT 1`,
-      [cleanPhone]
-    );
-
-    if (recent && (new Date() - new Date(recent.created_at)) < 15000) {
+    if (recent && (Date.now() - new Date(recent.createdAt).getTime()) < 15000) {
       return res.status(429).json({ error: 'Please wait 15 seconds before requesting another OTP.' });
     }
 
-    await db.run(
-      'INSERT INTO otp_verifications (id, phone_number, otp_code, expires_at) VALUES (?, ?, ?, ?)',
-      [generateId(), cleanPhone, generatedOtp, expiresAt]
-    );
+    await OtpVerification.create({
+      phoneNumber: cleanPhone,
+      otpCode: generatedOtp,
+      expiresAt,
+    });
 
     console.log(`[OTP SERVICE] Generated OTP for ${cleanPhone}: ${generatedOtp}`);
 
     return res.json({
       success: true,
       message: `OTP sent to ${cleanPhone}.`,
-      devOtp: isDevMode ? generatedOtp : undefined
+      devOtp: process.env.DEV_MODE === 'true' ? generatedOtp : undefined,
     });
   } catch (err) {
     console.error('sendOtp error:', err);
@@ -60,93 +50,66 @@ export async function verifyOtp(req, res) {
     }
 
     const cleanPhone = normalizePhoneNumber(phoneNumber);
-    const db = await getDb();
 
-    // Verify OTP
-    const record = await db.get(
-      `SELECT * FROM otp_verifications 
-       WHERE phone_number = ? AND otp_code = ? AND verified = 0 
-       ORDER BY created_at DESC LIMIT 1`,
-      [cleanPhone, otpCode.trim()]
-    );
+    const record = await OtpVerification
+      .findOne({ phoneNumber: cleanPhone, otpCode: otpCode.trim(), verified: false })
+      .sort({ createdAt: -1 })
+      .lean();
 
     if (!record) {
       return res.status(400).json({ error: 'Invalid or expired OTP code' });
     }
 
-    // Check expiration
-    if (new Date(record.expires_at) < new Date()) {
+    if (new Date(record.expiresAt) < new Date()) {
       return res.status(400).json({ error: 'OTP code has expired. Please request a new one.' });
     }
 
-    // Mark OTP verified
-    await db.run('UPDATE otp_verifications SET verified = 1 WHERE id = ?', [record.id]);
+    await OtpVerification.findByIdAndUpdate(record._id, { verified: true });
 
-    // Check if user exists
-    let user = await db.get('SELECT * FROM users WHERE phone_number = ?', [cleanPhone]);
+    let user = await User.findOne({ phoneNumber: cleanPhone }).lean();
     let isNewUser = false;
 
     if (!user) {
       isNewUser = true;
-      const userId = generateId();
-      const baseName = `User_${cleanPhone.slice(-4)}`;
       const username = `user_${cleanPhone.replace(/[^0-9]/g, '')}`;
-
-      await db.run(
-        `INSERT INTO users (id, phone_number, display_name, username, bio, avatar)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [userId, cleanPhone, baseName, username, 'Hey there! I am using MyChat.', `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`]
-      );
-
-      user = await db.get('SELECT * FROM users WHERE id = ?', [userId]);
-
-      // Initialize Privacy & Security settings
-      await db.run(
-        `INSERT INTO user_privacy_settings (user_id) VALUES (?)`,
-        [userId]
-      );
-      await db.run(
-        `INSERT INTO user_security_settings (user_id) VALUES (?)`,
-        [userId]
-      );
+      user = await User.create({
+        phoneNumber: cleanPhone,
+        displayName: `User_${cleanPhone.slice(-4)}`,
+        username,
+        bio: 'Hey there! I am using MyChat.',
+        avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`,
+      });
+      user = user.toObject();
     }
 
-    // Generate JWT
     const jwtSecret = process.env.JWT_SECRET || 'super_secret_jwt_token_key_change_in_production_2026';
     const token = jwt.sign(
-      { userId: user.id, phone: user.phone_number },
+      { userId: user._id, phone: user.phoneNumber },
       jwtSecret,
       { expiresIn: '30d' }
     );
 
-    // Record session
-    const sessionId = generateId();
-    await db.run(
-      `INSERT INTO sessions (id, user_id, device_name, platform, ip_address, token)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        sessionId,
-        user.id,
-        deviceName || 'Web Browser',
-        platform || 'Desktop / Mobile Web',
-        req.ip || '127.0.0.1',
-        token
-      ]
-    );
+    await Session.create({
+      userId: user._id,
+      deviceName: deviceName || 'Web Browser',
+      platform: platform || 'Desktop / Mobile Web',
+      ipAddress: req.ip || '127.0.0.1',
+      token,
+    });
 
     return res.json({
       success: true,
       token,
       isNewUser,
       user: {
-        id: user.id,
-        phoneNumber: user.phone_number,
-        displayName: user.display_name,
+        id: user._id,
+        phoneNumber: user.phoneNumber,
+        displayName: user.displayName,
         username: user.username,
         bio: user.bio,
         avatar: user.avatar,
-        isAdmin: Boolean(user.is_admin)
-      }
+        isAdmin: Boolean(user.isAdmin),
+      },
     });
   } catch (err) {
     console.error('verifyOtp error:', err);
@@ -156,8 +119,7 @@ export async function verifyOtp(req, res) {
 
 export async function logout(req, res) {
   try {
-    const db = await getDb();
-    await db.run('DELETE FROM sessions WHERE id = ?', [req.session.id]);
+    await Session.findByIdAndDelete(req.session._id);
     return res.json({ success: true, message: 'Logged out successfully' });
   } catch (err) {
     return res.status(500).json({ error: 'Logout failed' });
@@ -166,8 +128,7 @@ export async function logout(req, res) {
 
 export async function logoutAllOtherDevices(req, res) {
   try {
-    const db = await getDb();
-    await db.run('DELETE FROM sessions WHERE user_id = ? AND id != ?', [req.user.id, req.session.id]);
+    await Session.deleteMany({ userId: req.user._id, _id: { $ne: req.session._id } });
     return res.json({ success: true, message: 'Logged out from all other devices' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to logout other devices' });
@@ -176,20 +137,16 @@ export async function logoutAllOtherDevices(req, res) {
 
 export async function getActiveDevices(req, res) {
   try {
-    const db = await getDb();
-    const sessions = await db.all(
-      'SELECT id, device_name, platform, ip_address, last_active, created_at FROM sessions WHERE user_id = ? ORDER BY last_active DESC',
-      [req.user.id]
-    );
+    const sessions = await Session.find({ userId: req.user._id }).sort({ lastActive: -1 }).lean();
 
     const devices = sessions.map(s => ({
-      id: s.id,
-      deviceName: s.device_name,
+      id: s._id,
+      deviceName: s.deviceName,
       platform: s.platform,
-      ipAddress: s.ip_address,
-      lastActive: s.last_active,
-      createdAt: s.created_at,
-      isCurrent: s.id === req.session.id
+      ipAddress: s.ipAddress,
+      lastActive: s.lastActive,
+      createdAt: s.createdAt,
+      isCurrent: String(s._id) === String(req.session._id),
     }));
 
     return res.json({ devices });
