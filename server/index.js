@@ -27,6 +27,7 @@ const PORT = process.env.PORT || 5000;
 
 const allowedOrigins = [
   process.env.CLIENT_URL || 'http://localhost:3000',
+  'https://mychat2026.vercel.app',
   'http://127.0.0.1:3000',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
