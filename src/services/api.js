@@ -1,5 +1,4 @@
-const SERVER_URL = import.meta.env.VITE_API_URL || 'https://mychat-5tp1.onrender.com';
-const API_BASE_URL = `${SERVER_URL}/api`;
+import { API_BASE_URL } from '../config/backend.js';
 
 function getAuthHeader() {
   const token = localStorage.getItem('mychat_token') || localStorage.getItem('novachat_token');
@@ -20,10 +19,18 @@ async function request(endpoint, options = {}) {
     delete headers['Content-Type']; // Let browser set boundary
   }
 
-  const res = await fetch(url, {
-    ...options,
-    headers
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers
+    });
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(`Could not reach the API at ${url}. Check the backend URL, server status, and CORS configuration.`, { cause: error });
+    }
+    throw error;
+  }
 
   const data = await res.json().catch(() => ({}));
 
@@ -47,8 +54,6 @@ export const api = {
   updateProfile: (profileData) => request('/users/me', { method: 'PATCH', body: profileData }),
   updatePrivacy: (privacyData) => request('/users/privacy', { method: 'PATCH', body: privacyData }),
   updateSecurity: (securityData) => request('/users/security', { method: 'PATCH', body: securityData }),
-  updateLocation: (lat, lon, locationName) => request('/users/location', { method: 'POST', body: { latitude: lat, longitude: lon, locationName } }),
-  getNearbyPeople: () => request('/users/nearby'),
   searchUsers: (query) => request(`/users/search?query=${encodeURIComponent(query)}`),
   getContacts: () => request('/users/contacts'),
   addContact: (contactUserId, alias, phoneNumber) => request('/users/contacts', { method: 'POST', body: { contactUserId, alias, phoneNumber } }),
@@ -66,8 +71,6 @@ export const api = {
   getMessages: (roomId, limit = 50, before = null) => request(`/chats/${roomId}/messages?limit=${limit}${before ? `&before=${before}` : ''}`),
   sendMessage: (roomId, payload) => request(`/chats/${roomId}/messages`, { method: 'POST', body: payload }),
   consumeViewOnce: (messageId) => request(`/chats/messages/${messageId}/consume-view-once`, { method: 'POST' }),
-  hideChat: (roomId, pin) => request('/chats/hide', { method: 'POST', body: { roomId, pin } }),
-  unlockHiddenChats: (pin) => request('/chats/unlock-hidden', { method: 'POST', body: { pin } }),
   togglePinChat: (roomId) => request(`/chats/${roomId}/pin`, { method: 'POST' }),
   setChatBackground: (roomId, background) => request(`/chats/${roomId}/background`, { method: 'POST', body: { background } }),
 

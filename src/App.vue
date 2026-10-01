@@ -101,14 +101,6 @@
           </button>
 
           <button 
-            :class="['tab-btn', { active: activeTab === 'nearby' }]" 
-            @click="switchTab('nearby')"
-            title="People Nearby"
-          >
-            📍 <span class="tab-label">Nearby</span>
-          </button>
-
-          <button 
             :class="['tab-btn', { active: activeTab === 'contacts' }]" 
             @click="switchTab('contacts')"
             title="Contacts"
@@ -147,18 +139,6 @@
             <button @click="showNewChatModal = true" class="btn-icon-add" title="New Chat">+</button>
           </div>
 
-          <!-- Hidden Chats Unlock Prompt Banner -->
-          <div v-if="!chatStore.isHiddenUnlocked" class="hidden-chats-banner" @click="promptHiddenPin">
-            <span class="banner-icon">🔒</span>
-            <div class="banner-text">
-              <span class="banner-title">Hidden Chats</span>
-              <span class="banner-sub">Tap to enter security PIN</span>
-            </div>
-          </div>
-          <div v-else class="hidden-chats-unlocked-badge">
-            🔓 Hidden Chats Unlocked <button @click="chatStore.isHiddenUnlocked = false" class="btn-xs">Lock</button>
-          </div>
-
           <div class="chat-items-scroll">
             <div v-if="chatStore.isLoadingChats" class="loading-spinner">Loading chats...</div>
             
@@ -166,9 +146,8 @@
             <div v-else-if="filteredChats.length === 0" class="empty-chats-box">
               <span class="empty-icon">💬</span>
               <h4>No conversations yet</h4>
-              <p>Find a friend or search for someone to start chatting in real time.</p>
+              <p>Search for someone to start chatting in real time.</p>
               <div class="empty-actions">
-                <button @click="switchTab('nearby')" class="btn-primary btn-sm">Find People</button>
                 <button @click="switchTab('contacts')" class="btn-secondary btn-sm">Contacts</button>
                 <button @click="showNewChatModal = true" class="btn-secondary btn-sm">Add Contact</button>
               </div>
@@ -203,26 +182,6 @@
                     <span v-if="chat.unreadCount > 0" class="unread-badge">{{ chat.unreadCount }}</span>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- People Nearby View -->
-        <div v-else-if="activeTab === 'nearby'" class="nearby-container">
-          <div class="section-header">
-            <h3>📍 People Nearby</h3>
-            <p>Discover users in your approximate area</p>
-          </div>
-          <div class="nearby-scroll">
-            <div v-for="person in peopleStore.nearbyPeople" :key="person.id" class="person-card">
-              <img :src="person.avatar" class="avatar-lg" />
-              <div class="person-details">
-                <span class="person-name">{{ person.displayName }}</span>
-                <span class="person-user">@{{ person.username }}</span>
-                <span class="person-dist">📍 {{ person.distanceText }}</span>
-                <p class="person-bio">{{ person.bio }}</p>
-                <button @click="startChatWithUser(person.id)" class="btn-primary btn-sm mt-2">Message Direct</button>
               </div>
             </div>
           </div>
@@ -286,7 +245,7 @@
           <div class="welcome-banner">
             <span class="banner-hero-icon">⚡</span>
             <h2>Welcome to MyChat</h2>
-            <p>Select a conversation from the sidebar or find nearby people to start messaging in real time.</p>
+            <p>Select a conversation from the sidebar or start a new chat to begin messaging.</p>
             <div class="welcome-actions mt-3">
               <button @click="showNewChatModal = true" class="btn-primary">Start New Chat</button>
               <button @click="switchTab('contacts')" class="btn-secondary ml-2">My Contacts</button>
@@ -317,7 +276,6 @@
             <div class="header-actions">
               <button v-if="chatStore.activeChat?.type === 'group'" @click="showGroupInfoModal = true" class="btn-icon" title="Group Info">ℹ️</button>
               <button @click="togglePin" class="btn-icon" :title="chatStore.activeChat?.isPinned ? 'Unpin' : 'Pin Chat'">📌</button>
-              <button @click="promptHideCurrentChat" class="btn-icon" title="Hide Chat with PIN">🔒</button>
               <button @click="showWallpaperPicker = !showWallpaperPicker" class="btn-icon" title="Change Background">🎨</button>
               <button @click="openSettingsPage('main')" class="btn-icon" title="Application Settings">⚙️</button>
             </div>
@@ -551,8 +509,8 @@
 
           <!-- Search by Email -->
           <div v-if="newChatTab === 'email'" class="new-chat-section mt-3">
-            <label class="input-label">Enter Email Address:</label>
-            <input type="email" v-model="manualEmailInput" placeholder="user@example.com" class="email-input" />
+            <label class="input-label" for="new-chat-email">Enter Email Address:</label>
+            <input id="new-chat-email" type="email" v-model="manualEmailInput" placeholder="user@example.com" class="search-input-modal" />
             <button @click="handleAddContactByEmail" class="btn-primary btn-block mt-2">Search & Add Contact</button>
             <p v-if="emailAddResult" :class="['result-msg', emailAddResult.registered ? 'success' : 'error']">
               {{ emailAddResult.message }}
@@ -577,19 +535,6 @@
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- PIN Prompt Modal for Hidden Chats -->
-    <div v-if="showPinModal" class="modal-overlay">
-      <div class="modal-card">
-        <h3>Enter Security PIN</h3>
-        <p>Unlock your private hidden conversations.</p>
-        <input type="password" v-model="hiddenPinInput" maxlength="6" class="pin-input mt-2" placeholder="• • • •" />
-        <div class="modal-actions mt-3">
-          <button @click="submitHiddenPin" class="btn-primary">Unlock</button>
-          <button @click="showPinModal = false" class="btn-secondary">Cancel</button>
         </div>
       </div>
     </div>
@@ -667,6 +612,7 @@ import { useChatStore } from './stores/chatStore.js';
 import { usePeopleStore } from './stores/peopleStore.js';
 import { useAdminStore } from './stores/adminStore.js';
 import { api } from './services/api.js';
+import { SERVER_URL } from './config/backend.js';
 import SettingsModal from './components/SettingsModal.vue';
 import GroupInfoModal from './components/GroupInfoModal.vue';
 import CreateGroupModal from './components/CreateGroupModal.vue';
@@ -754,7 +700,7 @@ onUnmounted(() => {
 function fullFileUrl(url) {
   if (!url) return '';
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) return url;
-  const baseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+  const baseUrl = SERVER_URL || window.location.origin;
   return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
@@ -923,7 +869,6 @@ async function handleRegister() {
 
 function switchTab(tab) {
   activeTab.value = tab;
-  if (tab === 'nearby') peopleStore.fetchNearbyPeople();
   if (tab === 'contacts') peopleStore.fetchContacts();
   if (tab === 'admin') {
     adminStore.fetchStats();
@@ -1036,27 +981,6 @@ async function closeViewOnceModal() {
   if (activeViewOnceMsg.value) {
     await chatStore.consumeViewOnce(activeViewOnceMsg.value.id);
     activeViewOnceMsg.value = null;
-  }
-}
-
-function promptHiddenPin() {
-  showPinModal.value = true;
-}
-
-async function submitHiddenPin() {
-  const unlocked = await chatStore.unlockHiddenChats(hiddenPinInput.value);
-  if (unlocked) {
-    showPinModal.value = false;
-    hiddenPinInput.value = '';
-  }
-}
-
-async function promptHideCurrentChat() {
-  if (!chatStore.activeChatId) return;
-  const pin = prompt('Enter a 4-digit PIN to hide this conversation:');
-  if (pin) {
-    await chatStore.hideChat(chatStore.activeChatId, pin);
-    alert('Chat moved to Hidden Chats.');
   }
 }
 

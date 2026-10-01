@@ -3,34 +3,15 @@ import { api } from '../services/api.js';
 
 export const usePeopleStore = defineStore('people', {
   state: () => ({
-    nearbyPeople: [],
     searchResults: [],
     contacts: [],
     unregisteredContacts: [],
     blockedUsers: [],
-    isLocationEnabled: true,
     isLoading: false,
     selectedUserProfile: null
   }),
 
   actions: {
-    async fetchNearbyPeople() {
-      this.isLoading = true;
-      try {
-        const res = await api.getNearbyPeople();
-        this.isLocationEnabled = res.enabled;
-        this.nearbyPeople = res.people || [];
-        return res;
-      } finally {
-        this.isLoading = false;
-      }
-    },
-
-    async updateLocation(lat, lon, locName) {
-      await api.updateLocation(lat, lon, locName);
-      await this.fetchNearbyPeople();
-    },
-
     async search(query) {
       if (!query || query.trim().length === 0) {
         this.searchResults = [];

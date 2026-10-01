@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import { SERVER_URL } from '../config/backend.js';
 
 let socket = null;
 const eventListeners = new Map();
@@ -8,7 +9,7 @@ export function initSocket(token) {
     socket.disconnect();
   }
 
-  const socketUrl = import.meta.env.VITE_API_URL || 'https://mychat-5tp1.onrender.com';
+  const socketUrl = SERVER_URL || window.location.origin;
   socket = io(socketUrl, {
     auth: { token },
     transports: ['websocket', 'polling']

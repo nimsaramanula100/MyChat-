@@ -315,7 +315,7 @@
 
           <div class="setting-block">
             <h4 class="block-title">Security PIN & App Lock</h4>
-            <p class="block-sub">Set or change a 4-digit security PIN used to lock hidden chats & application state.</p>
+            <p class="block-sub">Set or change a 4-digit security PIN used to lock the application.</p>
             <div class="pin-setup-row mt-2">
               <input 
                 type="password" 
@@ -380,13 +380,6 @@
               <input type="checkbox" v-model="privacySettings.readReceipts" @change="savePrivacy" class="toggle-checkbox" />
             </div>
 
-            <div class="setting-row">
-              <div class="setting-text">
-                <span class="title">People Nearby Discovery</span>
-                <span class="desc">Allow users around your geolocation radius to discover your account.</span>
-              </div>
-              <input type="checkbox" v-model="peopleStore.isLocationEnabled" @change="savePrivacy" class="toggle-checkbox" />
-            </div>
           </div>
 
           <div class="setting-block">
@@ -686,7 +679,6 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue';
 import { useAuthStore } from '../stores/authStore.js';
-import { usePeopleStore } from '../stores/peopleStore.js';
 import { useChatStore } from '../stores/chatStore.js';
 import { api } from '../services/api.js';
 
@@ -700,7 +692,6 @@ const props = defineProps({
 const emit = defineEmits(['close']);
 
 const authStore = useAuthStore();
-const peopleStore = usePeopleStore();
 const chatStore = useChatStore();
 
 const currentPage = ref(props.initialPage || 'main');
@@ -784,8 +775,6 @@ const expandedFaq = ref(null);
 const faqList = [
   { q: 'How do I add contacts by mobile phone number?', a: 'Click the "+" button at the top of the chat list, select "By Phone Number", enter their mobile number (e.g. +94771234567) and tap "Search & Add Contact".' },
   { q: 'How do View-Once photo messages work?', a: 'Click the "1️⃣" icon in the message input bar before sending a photo. The recipient can only view it once before it expires permanently.' },
-  { q: 'How do I hide and lock private chats with a PIN?', a: 'Click the lock icon (🔒) in the chat header to set a PIN and hide the chat. Access hidden chats from the top banner in the chat list.' },
-  { q: 'How do I discover people nearby?', a: 'Navigate to the "Nearby" tab in the main section selector. Ensure Location Discovery is enabled in Privacy Settings.' }
 ];
 
 const feedbackForm = reactive({

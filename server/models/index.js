@@ -18,7 +18,6 @@ const userSchema = new Schema({
     lastSeenPrivacy: { type: String, default: 'everyone' },
     profilePhotoPrivacy: { type: String, default: 'everyone' },
     onlineStatusPrivacy: { type: String, default: 'everyone' },
-    locationDiscoveryEnabled: { type: Boolean, default: true },
     whoCanMessage: { type: String, default: 'everyone' },
     readReceiptsEnabled: { type: Boolean, default: true },
   },
@@ -82,7 +81,6 @@ const chatMemberSchema = new Schema({
   joinedAt: { type: Date, default: Date.now },
   isPinned: { type: Boolean, default: false },
   isMuted: { type: Boolean, default: false },
-  isHidden: { type: Boolean, default: false },
   isLocked: { type: Boolean, default: false },
   customBackground: { type: String, default: '' },
 }, { timestamps: true });
@@ -111,15 +109,6 @@ const messageSchema = new Schema({
 }, { timestamps: true });
 messageSchema.index({ roomId: 1, createdAt: 1 });
 
-// ─── Hidden / Locked Chat ─────────────────────────────────────────────────────
-const hiddenChatSchema = new Schema({
-  _id: { type: String, default: () => crypto.randomUUID() },
-  userId: { type: String, ref: 'User', required: true },
-  roomId: { type: String, ref: 'ChatRoom', required: true },
-  pinHash: { type: String, required: true },
-}, { timestamps: true });
-hiddenChatSchema.index({ userId: 1, roomId: 1 }, { unique: true });
-
 // ─── Report ───────────────────────────────────────────────────────────────────
 const reportSchema = new Schema({
   _id: { type: String, default: () => crypto.randomUUID() },
@@ -138,5 +127,4 @@ export const BlockedUser = mongoose.model('BlockedUser', blockedUserSchema);
 export const ChatRoom = mongoose.model('ChatRoom', chatRoomSchema);
 export const ChatMember = mongoose.model('ChatMember', chatMemberSchema);
 export const Message = mongoose.model('Message', messageSchema);
-export const HiddenChat = mongoose.model('HiddenChat', hiddenChatSchema);
 export const Report = mongoose.model('Report', reportSchema);

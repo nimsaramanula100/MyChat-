@@ -1,6 +1,5 @@
 import bcrypt from 'bcryptjs';
 import { User } from '../models/index.js';
-import { calculateHaversineDistance } from '../utils/distance.js';
 
 export async function getMe(req, res) {
   try {
@@ -73,7 +72,6 @@ export async function updatePrivacySettings(req, res) {
       lastSeenPrivacy,
       profilePhotoPrivacy,
       onlineStatusPrivacy,
-      locationDiscoveryEnabled,
       whoCanMessage,
       readReceiptsEnabled,
     } = req.body;
@@ -83,7 +81,6 @@ export async function updatePrivacySettings(req, res) {
     if (lastSeenPrivacy !== undefined) privacyUpdate['privacy.lastSeenPrivacy'] = lastSeenPrivacy;
     if (profilePhotoPrivacy !== undefined) privacyUpdate['privacy.profilePhotoPrivacy'] = profilePhotoPrivacy;
     if (onlineStatusPrivacy !== undefined) privacyUpdate['privacy.onlineStatusPrivacy'] = onlineStatusPrivacy;
-    if (locationDiscoveryEnabled !== undefined) privacyUpdate['privacy.locationDiscoveryEnabled'] = locationDiscoveryEnabled;
     if (whoCanMessage !== undefined) privacyUpdate['privacy.whoCanMessage'] = whoCanMessage;
     if (readReceiptsEnabled !== undefined) privacyUpdate['privacy.readReceiptsEnabled'] = readReceiptsEnabled;
 
@@ -115,61 +112,6 @@ export async function updateSecuritySettings(req, res) {
   } catch (err) {
     console.error('updateSecurity error:', err);
     return res.status(500).json({ error: 'Failed to update security settings' });
-  }
-}
-
-export async function updateLocation(req, res) {
-  try {
-    const { latitude, longitude, locationName } = req.body;
-    if (latitude === undefined || longitude === undefined) {
-      return res.status(400).json({ error: 'Latitude and longitude required' });
-    }
-
-    await User.findByIdAndUpdate(req.user._id, {
-      'location.latitude': latitude,
-      'location.longitude': longitude,
-      'location.approxLocationName': locationName || 'Approximate area',
-      'location.updatedAt': new Date(),
-    });
-
-    return res.json({ success: true, message: 'Location updated successfully' });
-  } catch (err) {
-    return res.status(500).json({ error: 'Failed to update location' });
-  }
-}
-
-export async function getNearbyPeople(req, res) {
-  try {
-    const me = await User.findById(req.user._id).lean();
-
-    if (!me.privacy?.locationDiscoveryEnabled) {
-      return res.json({ enabled: false, message: 'Location discovery is currently disabled in your privacy settings.', people: [] });
-    }
-
-    const myLat = me.location?.latitude || 6.9271;
-    const myLon = me.location?.longitude || 79.8612;
-
-    const candidates = await User.find({
-      _id: { $ne: req.user._id },
-      isSuspended: false,
-      'location.latitude': { $exists: true },
-      'privacy.locationDiscoveryEnabled': { $ne: false },
-    }).lean();
-
-    const people = candidates.map(u => ({
-      id: u._id,
-      displayName: u.displayName,
-      username: u.username,
-      avatar: u.avatar,
-      bio: u.bio,
-      distanceText: calculateHaversineDistance(myLat, myLon, u.location.latitude, u.location.longitude),
-      approxLocation: u.location?.approxLocationName || 'Nearby',
-    }));
-
-    return res.json({ enabled: true, people });
-  } catch (err) {
-    console.error('getNearbyPeople error:', err);
-    return res.status(500).json({ error: 'Failed to fetch nearby people' });
   }
 }
 

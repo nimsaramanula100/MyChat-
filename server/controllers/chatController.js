@@ -1,5 +1,4 @@
-import bcrypt from 'bcryptjs';
-import { ChatRoom, ChatMember, Message, HiddenChat, User } from '../models/index.js';
+import { ChatRoom, ChatMember, Message, User } from '../models/index.js';
 
 export async function getChats(req, res) {
   try {
@@ -55,7 +54,6 @@ export async function getChats(req, res) {
         } : null,
         isPinned: Boolean(membership?.isPinned),
         isMuted: Boolean(membership?.isMuted),
-        isHidden: Boolean(membership?.isHidden),
         isLocked: Boolean(membership?.isLocked),
         customBackground: membership?.customBackground || '',
         unreadCount,
@@ -346,49 +344,6 @@ export async function consumeViewOnce(req, res) {
     return res.json({ success: true, message: 'View-once media consumed' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to consume view-once media' });
-  }
-}
-
-export async function hideChat(req, res) {
-  try {
-    const { roomId, pin } = req.body;
-    if (!pin || pin.length < 4) {
-      return res.status(400).json({ error: 'PIN (at least 4 digits) is required' });
-    }
-    const pinHash = await bcrypt.hash(pin, 10);
-    await ChatMember.findOneAndUpdate({ roomId, userId: req.user._id }, { isHidden: true });
-    await HiddenChat.findOneAndUpdate(
-      { userId: req.user._id, roomId },
-      { pinHash },
-      { upsert: true }
-    );
-    return res.json({ success: true, message: 'Chat moved to Hidden Chats' });
-  } catch (err) {
-    return res.status(500).json({ error: 'Failed to hide chat' });
-  }
-}
-
-export async function unlockHiddenChats(req, res) {
-  try {
-    const { pin } = req.body;
-    if (!pin) return res.status(400).json({ error: 'PIN required' });
-
-    const hiddenRecords = await HiddenChat.find({ userId: req.user._id }).lean();
-    let valid = false;
-    for (const rec of hiddenRecords) {
-      if (await bcrypt.compare(pin, rec.pinHash)) {
-        valid = true;
-        break;
-      }
-    }
-
-    if (!valid && hiddenRecords.length > 0) {
-      return res.status(401).json({ error: 'Incorrect PIN' });
-    }
-
-    return res.json({ success: true, unlocked: true });
-  } catch (err) {
-    return res.status(500).json({ error: 'Failed to unlock hidden chats' });
   }
 }
 

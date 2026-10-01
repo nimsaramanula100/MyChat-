@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   getChats, createChat, getMessages, sendMessage, consumeViewOnce,
-  hideChat, unlockHiddenChats, togglePinChat, setChatBackground,
+  togglePinChat, setChatBackground,
   getGroupInfo, updateGroupInfo, addGroupMembers, removeGroupMember, leaveGroup
 } from '../controllers/chatController.js';
 import { authenticateToken } from '../middleware/auth.js';
@@ -21,9 +21,6 @@ router.get('/:roomId/messages', authenticateToken, getMessages);
 router.post('/:roomId/messages', authenticateToken, sendMessage);
 
 router.post('/messages/:messageId/consume-view-once', authenticateToken, consumeViewOnce);
-
-router.post('/hide', authenticateToken, hideChat);
-router.post('/unlock-hidden', authenticateToken, unlockHiddenChats);
 
 router.post('/:roomId/pin', authenticateToken, togglePinChat);
 router.post('/:roomId/background', authenticateToken, setChatBackground);

@@ -5,15 +5,12 @@ import { onSocketEvent, emitSocketEvent } from '../services/socket.js';
 export const useChatStore = defineStore('chat', {
   state: () => ({
     chats: [],
-    hiddenChats: [],
     activeChatId: null,
     messages: {}, // roomId -> array of messages
     typingUsers: {}, // roomId -> Set of user displayNames
     onlineUsers: new Set(),
     isLoadingChats: false,
     isLoadingMessages: false,
-    isHiddenUnlocked: false,
-    hiddenPinPrompt: false,
     currentWallpaper: 'default', // default, dark, gradient, custom URL
     isSocketInitialized: false
   }),
@@ -21,13 +18,8 @@ export const useChatStore = defineStore('chat', {
   getters: {
     activeChat: (state) => state.chats.find(c => c.id === state.activeChatId) || null,
     activeMessages: (state) => state.messages[state.activeChatId] || [],
-    visibleChats: (state) => {
-      if (state.isHiddenUnlocked) {
-        return state.chats;
-      }
-      return state.chats.filter(c => !c.isHidden);
-    },
-    pinnedChats: (state) => state.chats.filter(c => c.isPinned && (!c.isHidden || state.isHiddenUnlocked)),
+    visibleChats: (state) => state.chats,
+    pinnedChats: (state) => state.chats.filter(c => c.isPinned),
     unreadTotal: (state) => state.chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0)
   },
 
@@ -219,20 +211,6 @@ export const useChatStore = defineStore('chat', {
       await this.fetchChats();
       await this.selectChat(res.roomId);
       return res.roomId;
-    },
-
-    async hideChat(roomId, pin) {
-      await api.hideChat(roomId, pin);
-      const chat = this.chats.find(c => c.id === roomId);
-      if (chat) chat.isHidden = true;
-    },
-
-    async unlockHiddenChats(pin) {
-      const res = await api.unlockHiddenChats(pin);
-      if (res.unlocked) {
-        this.isHiddenUnlocked = true;
-      }
-      return res.unlocked;
     },
 
     async togglePinChat(roomId) {
